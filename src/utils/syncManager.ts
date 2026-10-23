@@ -8,7 +8,7 @@ import type { Expense, InflationSettings, SyncConfig, SyncState } from '../types
 const SYNC_CONFIG_KEY = 'finanzas_sync_config_v1';
 const DELETED_EXPENSES_QUEUE_KEY = 'finanzas_deleted_queue_v1';
 
-export const DEFAULT_API_URL = '';
+export const DEFAULT_API_URL = 'https://finanzas-hogar-api.finanzas-del-hogar.workers.dev';
 
 /**
  * Genera un código de hogar amigable (ej: hogar-marta-842)
