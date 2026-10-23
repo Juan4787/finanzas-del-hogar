@@ -37,7 +37,6 @@ export const App: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>(() => loadExpenses());
   const [inflationSettings, setInflationSettings] = useState<InflationSettings>(() => loadInflationSettings());
   
-  // Recordar la última pestaña activa para que nunca se reinicie al volver de otra app
   const [activeTab, setActiveTab] = useState<'home' | 'compare' | 'settings'>(() => {
     try {
       const saved = sessionStorage.getItem(TAB_STORAGE_KEY);
@@ -48,28 +47,27 @@ export const App: React.FC = () => {
   });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
+
   const { isInstallable, promptInstall } = useOnlineStatus();
 
-  // Guardar pestaña en sessionStorage
   useEffect(() => {
     try {
       sessionStorage.setItem(TAB_STORAGE_KEY, activeTab);
     } catch {}
   }, [activeTab]);
 
-  // Manejar el botón "Atrás" del navegador / celular (History API)
   useEffect(() => {
     const handlePopState = () => {
-      if (isAddModalOpen) {
-        setIsAddModalOpen(false);
-      } else if (activeTab !== 'home') {
+      // La tarjeta de gasto NO se cierra por popstate ni backspace
+      if (activeTab !== 'home') {
         setActiveTab('home');
       }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isAddModalOpen, activeTab]);
+  }, [activeTab]);
 
   useEffect(() => {
     saveExpenses(expenses);
@@ -87,13 +85,27 @@ export const App: React.FC = () => {
     return computeCumulativePriceIndices(inflationSettings.rates, expenseMonths);
   }, [inflationSettings.rates, expenses]);
 
-  const handleAddExpense = (newExpense: Expense) => {
-    const normalizedExpense: Expense = {
-      ...newExpense,
-      category: normalizeCategoryName(newExpense.category),
-      amount: Math.round(newExpense.amount),
+  // Manejador unificado para crear o editar gasto
+  const handleSaveExpense = (savedExpense: Expense) => {
+    const normalized: Expense = {
+      ...savedExpense,
+      category: normalizeCategoryName(savedExpense.category),
+      amount: Math.round(savedExpense.amount),
     };
-    setExpenses(prev => [normalizedExpense, ...prev]);
+
+    if (expenseToEdit) {
+      // Edición: actualizar el elemento existente
+      setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+      setExpenseToEdit(null);
+    } else {
+      // Creación: agregar arriba
+      setExpenses(prev => [normalized, ...prev]);
+    }
+  };
+
+  const handleOpenEdit = (expense: Expense) => {
+    setExpenseToEdit(expense);
+    setIsAddModalOpen(true);
   };
 
   const handleDeleteExpense = (id: string) => {
@@ -121,7 +133,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Resumen del mes actual para el gráfico de torta
   const thisMonthRange = getThisMonthRange();
   const currentMonthSummary = useMemo(() => {
     return calculatePeriodSummary(
@@ -145,11 +156,10 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-responsive-shell">
-      {/* BARRA SUPERIOR ADAPTABLE (PC Y CELULAR) */}
+      {/* BARRA SUPERIOR ADAPTABLE */}
       <header className="app-top-header">
         <div className="header-content-inner">
           <div className="header-left">
-            {/* Botón Volver cuando no está en Inicio */}
             {activeTab !== 'home' ? (
               <button
                 className="btn-back-header"
@@ -167,7 +177,6 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* Navegación para pantallas de escritorio (PC) */}
           <nav className="desktop-nav-tabs">
             <button
               className={`desktop-tab-btn ${activeTab === 'home' ? 'active' : ''}`}
@@ -200,7 +209,6 @@ export const App: React.FC = () => {
               </button>
             )}
 
-            {/* Acceso directo a ajustes en celular */}
             <button
               className={`btn-settings-header ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => navigateToTab(activeTab === 'settings' ? 'home' : 'settings')}
@@ -213,25 +221,23 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* ÁREA DE CONTENIDO PRINCIPAL ADAPTABLE */}
+      {/* ÁREA DE CONTENIDO */}
       <main className="app-main-viewport">
-        {/* PESTAÑA 1: INICIO (ADAPTABLE MOBILE Y PC) */}
         {activeTab === 'home' && (
           <div className="tab-pane animate-fade-in">
-            {/* En PC se organiza en layout de 2 columnas balanceadas; en móvil en 1 columna */}
             <div className="dashboard-responsive-grid">
-              {/* Columna Izquierda / Principal */}
               <div className="dashboard-col-main">
-                {/* Botón Gigante para Anotar Gasto */}
                 <button
                   className="btn-hero-anotar"
-                  onClick={() => setIsAddModalOpen(true)}
+                  onClick={() => {
+                    setExpenseToEdit(null);
+                    setIsAddModalOpen(true);
+                  }}
                 >
                   <Plus size={26} strokeWidth={2.6} />
                   <span>+ Anotar Gasto</span>
                 </button>
 
-                {/* Resúmenes: Hoy, Esta Semana, Este Mes */}
                 <SummaryCards
                   expenses={expenses}
                   settings={inflationSettings}
@@ -239,16 +245,15 @@ export const App: React.FC = () => {
                   onSelectPeriodComparison={() => navigateToTab('compare')}
                 />
 
-                {/* Lista de Últimos Gastos */}
                 <ExpenseList
                   expenses={expenses}
                   settings={inflationSettings}
                   indices={indices}
+                  onEditExpense={handleOpenEdit}
                   onDeleteExpense={handleDeleteExpense}
                 />
               </div>
 
-              {/* Columna Derecha: Gráfico de Torta / Dona */}
               <div className="dashboard-col-chart">
                 <PieChart
                   data={pieChartData}
@@ -259,7 +264,6 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* PESTAÑA 2: COMPARAR */}
         {activeTab === 'compare' && (
           <div className="tab-pane animate-fade-in">
             <div className="subview-centered-container">
@@ -272,7 +276,6 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* PESTAÑA 3: AJUSTES */}
         {activeTab === 'settings' && (
           <div className="tab-pane animate-fade-in">
             <div className="subview-centered-container">
@@ -289,7 +292,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* BARRA INFERIOR DE NAVEGACIÓN (VISIBLE SÓLO EN CELULARES) */}
+      {/* BARRA INFERIOR DE NAVEGACIÓN */}
       <nav className="mobile-bottom-nav">
         <button
           className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
@@ -316,11 +319,15 @@ export const App: React.FC = () => {
         </button>
       </nav>
 
-      {/* MODAL PARA AGREGAR GASTO */}
+      {/* MODAL PARA AGREGAR O EDITAR GASTO */}
       <AddExpenseModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAddExpense={handleAddExpense}
+        expenseToEdit={expenseToEdit}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setExpenseToEdit(null);
+        }}
+        onSaveExpense={handleSaveExpense}
         allExpenses={expenses}
       />
     </div>

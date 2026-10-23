@@ -7,12 +7,14 @@ import {
   normalizeCategoryName,
 } from '../utils/financeCalculations';
 import { formatDateTime } from '../utils/dateUtils';
-import { Search, Trash2 } from 'lucide-react';
+import { Search, Trash2, Pencil } from 'lucide-react';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ExpenseListProps {
   expenses: Expense[];
   settings: InflationSettings;
   indices: Record<string, number>;
+  onEditExpense: (expense: Expense) => void;
   onDeleteExpense: (id: string) => void;
 }
 
@@ -20,9 +22,11 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   expenses,
   settings,
   indices,
+  onEditExpense,
   onDeleteExpense,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
 
   const filtered = expenses.filter(e => {
     const normCat = normalizeCategoryName(e.category);
@@ -34,6 +38,13 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   });
 
   filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const handleConfirmDelete = () => {
+    if (expenseToDelete) {
+      onDeleteExpense(expenseToDelete.id);
+      setExpenseToDelete(null);
+    }
+  };
 
   return (
     <div className="simple-card">
@@ -53,7 +64,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
           onChange={(e) => setSearchTerm(e.target.value)}
         />
         {searchTerm && (
-          <button className="clear-search-btn" onClick={() => setSearchTerm('')}>
+          <button className="clear-search-btn" onClick={() => setSearchTerm('')} aria-label="Limpiar búsqueda">
             ✕
           </button>
         )}
@@ -61,7 +72,11 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
 
       {filtered.length === 0 ? (
         <div className="simple-empty-state">
-          <p>No hay gastos encontrados.</p>
+          <p>
+            {expenses.length === 0
+              ? 'No hay gastos anotados todavía. ¡Toca "+ Anotar Gasto" para comenzar!'
+              : 'No se encontraron gastos con esa búsqueda.'}
+          </p>
         </div>
       ) : (
         <div className="simple-expense-items-list">
@@ -88,23 +103,45 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
 
                 <div className="expense-right-side">
                   <span className="expense-item-amount">{formatCurrency(displayAmount)}</span>
-                  <button
-                    className="btn-trash-simple"
-                    aria-label={`Borrar gasto ${item.name}`}
-                    onClick={() => {
-                      if (confirm(`¿Borrar "${item.name}" por ${formatCurrency(nominal)}?`)) {
-                        onDeleteExpense(item.id);
-                      }
-                    }}
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  
+                  {/* Botones de acción: Editar (Lápiz) y Borrar (Tacho) */}
+                  <div className="expense-action-buttons">
+                    <button
+                      className="btn-action-icon btn-edit-pencil"
+                      title="Editar gasto"
+                      aria-label={`Editar ${item.name}`}
+                      onClick={() => onEditExpense(item)}
+                    >
+                      <Pencil size={17} />
+                    </button>
+                    
+                    <button
+                      className="btn-action-icon btn-trash-delete"
+                      title="Borrar gasto"
+                      aria-label={`Borrar ${item.name}`}
+                      onClick={() => setExpenseToDelete(item)}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Modal de confirmación estilizado sin alert nativo */}
+      <ConfirmModal
+        isOpen={Boolean(expenseToDelete)}
+        title="¿Borrar este gasto?"
+        message={`Se eliminará "${expenseToDelete?.name}" por ${formatCurrency(expenseToDelete?.amount || 0)}.`}
+        confirmLabel="Sí, borrar"
+        cancelLabel="Cancelar"
+        isDestructive={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setExpenseToDelete(null)}
+      />
     </div>
   );
 };

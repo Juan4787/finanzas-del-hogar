@@ -678,17 +678,172 @@ html, body {
   color: var(--text-main);
 }
 
-.btn-trash-simple {
-  background: transparent;
-  border: none;
+.expense-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-action-icon {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   color: var(--text-dim);
-  padding: 6px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-edit-pencil:hover {
+  color: var(--emerald-light);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: var(--bg-card-hover);
+}
+
+.btn-trash-delete:hover {
+  color: var(--coral-danger);
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* MODAL DE CONFIRMACIÓN CUSTOM (SIN POPUP NATIVO) */
+.confirm-modal-card {
+  max-width: 400px;
+  text-align: center;
+  padding: 26px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-medium);
+}
+
+.confirm-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.confirm-modal-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.confirm-modal-message {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.confirm-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.btn-confirm-cancel {
+  padding: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-weight: 700;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
-.btn-trash-simple:hover {
-  color: var(--coral-danger);
+.btn-confirm-action {
+  padding: 12px;
+  border: none;
+  font-weight: 800;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.btn-action-danger {
+  background: var(--coral-danger);
+  color: #ffffff;
+}
+
+.btn-action-primary {
+  background: var(--emerald-main);
+  color: #ffffff;
+}
+
+/* CUSTOM SELECT & FORM INPUTS (SIN ESTILO NATIVO) */
+.custom-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.simple-select {
+  width: 100%;
+  padding: 14px 40px 14px 16px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 1rem;
+  font-weight: 600;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.simple-select:focus {
+  border-color: var(--emerald-main);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+/* DATE & DATETIME PICKER CUSTOMIZADO */
+input[type="date"], input[type="month"], input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8) sepia(50%) saturate(300%) hue-rotate(100deg);
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 4px;
+}
+
+/* CUSTOM SCROLLBARS */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #25334c;
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b4e70;
 }
 
 /* PESTAÑA COMPARAR */
@@ -972,6 +1127,61 @@ input:checked + .slider:before {
 
 .simple-input:focus {
   border-color: var(--emerald-main);
+}
+
+.simple-input-with-clear {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.simple-input-with-clear .simple-input {
+  padding-right: 42px;
+}
+
+.btn-input-clear {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-input-clear:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-main);
+}
+
+.btn-input-clear-fluid {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-input-clear-fluid:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-main);
 }
 
 .simple-add-month-row {

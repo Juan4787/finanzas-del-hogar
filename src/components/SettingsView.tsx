@@ -17,6 +17,7 @@ import {
   FileSpreadsheet,
   Plus,
 } from 'lucide-react';
+import { ConfirmModal } from './ConfirmModal';
 
 interface SettingsViewProps {
   expenses: Expense[];
@@ -36,6 +37,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [newMonthInput, setNewMonthInput] = useState('');
   const [newRateInput, setNewRateInput] = useState('');
+  const [confirmModalData, setConfirmModalData] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    isDestructive: boolean;
+    onConfirm: () => void;
+  } | null>(null);
 
   const expenseMonths = expenses.map(e => getMonthKey(e.timestamp));
   const allMonths = Array.from(new Set([...Object.keys(settings.rates), ...expenseMonths])).filter(Boolean);
@@ -74,11 +82,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const json = JSON.parse(event.target?.result as string);
         if (json.expenses && Array.isArray(json.expenses)) {
           onRestoreData(json.expenses, json.inflation || settings);
-          alert('Datos restaurados correctamente.');
         }
-      } catch {
-        alert('Archivo no válido.');
-      }
+      } catch {}
     };
     reader.readAsText(file);
   };
@@ -106,17 +111,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="simple-field-group">
           <label className="simple-label">Mes de referencia (Precios de hoy):</label>
-          <select
-            className="simple-input"
-            value={settings.baseMonthKey}
-            onChange={(e) => onUpdateSettings({ ...settings, baseMonthKey: e.target.value })}
-          >
-            {allMonths.map((m) => (
-              <option key={m} value={m}>
-                {formatMonthName(m)}
-              </option>
-            ))}
-          </select>
+          <div className="custom-select-wrapper">
+            <select
+              className="simple-select"
+              value={settings.baseMonthKey}
+              onChange={(e) => onUpdateSettings({ ...settings, baseMonthKey: e.target.value })}
+            >
+              {allMonths.map((m) => (
+                <option key={m} value={m}>
+                  {formatMonthName(m)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Carga Rápida de Inflación por Mes */}
@@ -141,7 +148,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onChange={(e) => setNewRateInput(e.target.value)}
               required
             />
-            <button type="submit" className="btn-add-rate" title="Agregar mes">
+            <button type="submit" className="btn-add-rate" title="Guardar tasa">
               <Plus size={18} />
             </button>
           </form>
@@ -182,7 +189,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="btn-simple-backup"
             onClick={() => exportBackupJSON(expenses, settings)}
           >
-            <Download size={18} />
+            <Download size={20} className="text-emerald" />
             <span>Descargar Copia (JSON)</span>
           </button>
 
@@ -190,12 +197,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="btn-simple-backup"
             onClick={() => exportExpensesCSV(expenses)}
           >
-            <FileSpreadsheet size={18} />
+            <FileSpreadsheet size={20} className="text-blue" />
             <span>Exportar a Excel (CSV)</span>
           </button>
 
           <label className="btn-simple-backup file-label">
-            <Upload size={18} />
+            <Upload size={20} className="text-amber" />
             <span>Restaurar Copia</span>
             <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileUpload} />
           </label>
@@ -203,13 +210,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             className="btn-simple-backup"
             onClick={() => {
-              if (confirm('¿Cargar datos de ejemplo con gastos de demostración?')) {
-                const demo = generateDemoData();
-                onRestoreData(demo.expenses, demo.inflation);
-              }
+              setConfirmModalData({
+                title: '¿Cargar datos de ejemplo?',
+                message: 'Se cargarán gastos de demostración y tasas de inflación para probar la app.',
+                confirmLabel: 'Sí, cargar',
+                isDestructive: false,
+                onConfirm: () => {
+                  const demo = generateDemoData();
+                  onRestoreData(demo.expenses, demo.inflation);
+                  setConfirmModalData(null);
+                },
+              });
             }}
           >
-            <RefreshCw size={18} />
+            <RefreshCw size={20} className="text-muted" />
             <span>Cargar Datos de Ejemplo</span>
           </button>
         </div>
@@ -218,9 +232,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             className="btn-simple-danger"
             onClick={() => {
-              if (confirm('¿Borrar todos los gastos registrados?')) {
-                onClearData();
-              }
+              setConfirmModalData({
+                title: '¿Borrar todos los gastos?',
+                message: 'Esta acción eliminará todos los gastos registrados de la aplicación.',
+                confirmLabel: 'Sí, borrar todo',
+                isDestructive: true,
+                onConfirm: () => {
+                  onClearData();
+                  setConfirmModalData(null);
+                },
+              });
             }}
           >
             <Trash2 size={16} />
@@ -228,6 +249,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Modal de confirmación personalizado */}
+      <ConfirmModal
+        isOpen={Boolean(confirmModalData)}
+        title={confirmModalData?.title || ''}
+        message={confirmModalData?.message || ''}
+        confirmLabel={confirmModalData?.confirmLabel || 'Aceptar'}
+        isDestructive={confirmModalData?.isDestructive || false}
+        onConfirm={() => confirmModalData?.onConfirm()}
+        onCancel={() => setConfirmModalData(null)}
+      />
     </div>
   );
 };

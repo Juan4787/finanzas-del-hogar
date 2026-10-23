@@ -143,35 +143,59 @@ export const PeriodComparator: React.FC<PeriodComparatorProps> = ({
         </div>
       </div>
 
-      {/* Desglose por categorías */}
-      {summaryA.categoryBreakdown.length > 0 && (
-        <div className="simple-category-diff-section">
-          <h4 className="simple-subheading">Diferencia por rubro</h4>
-          <div className="simple-category-diff-list">
-            {summaryA.categoryBreakdown.map((catA) => {
-              const valA = settings.enabled ? catA.constant : catA.nominal;
-              const catB = summaryB.categoryBreakdown.find((b) => b.category === catA.category);
-              const valB = catB ? (settings.enabled ? catB.constant : catB.nominal) : 0;
-              const catDiff = valA - valB;
+      {/* Desglose por categorías (combinando ambos períodos para ver ahorros e incrementos reales) */}
+      {(() => {
+        const allCategoryNames = Array.from(
+          new Set([
+            ...summaryA.categoryBreakdown.map((c) => c.category),
+            ...summaryB.categoryBreakdown.map((c) => c.category),
+          ])
+        );
 
-              return (
-                <div key={catA.category} className="simple-diff-row">
+        if (allCategoryNames.length === 0) return null;
+
+        const sortedDiffs = allCategoryNames
+          .map((catName) => {
+            const catA = summaryA.categoryBreakdown.find((b) => b.category === catName);
+            const catB = summaryB.categoryBreakdown.find((b) => b.category === catName);
+            const valA = catA ? (settings.enabled ? catA.constant : catA.nominal) : 0;
+            const valB = catB ? (settings.enabled ? catB.constant : catB.nominal) : 0;
+            const catDiff = valA - valB;
+            const color = catA?.color || catB?.color || '#64748b';
+            return { catName, valA, valB, catDiff, color };
+          })
+          .sort((a, b) => Math.abs(b.catDiff) - Math.abs(a.catDiff));
+
+        return (
+          <div className="simple-category-diff-section">
+            <h4 className="simple-subheading">Diferencia por rubro</h4>
+            <div className="simple-category-diff-list">
+              {sortedDiffs.map(({ catName, valA, catDiff, color }) => (
+                <div key={catName} className="simple-diff-row">
                   <div className="diff-name-group">
-                    <span className="diff-dot" style={{ backgroundColor: catA.color }} />
-                    <span className="diff-name">{catA.category}</span>
+                    <span className="diff-dot" style={{ backgroundColor: color }} />
+                    <span className="diff-name">{catName}</span>
                   </div>
                   <div className="diff-values">
                     <span className="diff-current">{formatCurrency(valA)}</span>
-                    <span className={`diff-change ${catDiff > 0 ? 'text-danger' : catDiff < 0 ? 'text-emerald' : 'text-muted'}`}>
-                      {catDiff > 0 ? `+${formatCurrency(catDiff)}` : catDiff < 0 ? `-${formatCurrency(Math.abs(catDiff))}` : '='}
+                    <span
+                      className={`diff-change ${
+                        catDiff > 0 ? 'text-danger' : catDiff < 0 ? 'text-emerald' : 'text-muted'
+                      }`}
+                    >
+                      {catDiff > 0
+                        ? `+${formatCurrency(catDiff)}`
+                        : catDiff < 0
+                        ? `-${formatCurrency(Math.abs(catDiff))}`
+                        : '='}
                     </span>
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Opciones avanzadas de fechas (Discreto para el ayudante) */}
       <div className="simple-advanced-toggle">
