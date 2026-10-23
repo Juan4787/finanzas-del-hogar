@@ -11,6 +11,8 @@ export interface Expense {
   timestamp: string; // ISO 8601 (ej: 2026-10-23T16:20:00)
   category: string; // Nombre de la categoría (ej: 'Expensas', 'Alimentos', o 'Otros')
   notes?: string;
+  updatedAt?: number; // Epoch ms para sincronización y resolución LWW
+  deleted?: boolean; // Tombstone para sincronizar borrados
 }
 
 export interface MonthlyInflation {
@@ -22,7 +24,17 @@ export interface InflationSettings {
   rates: Record<string, number>; // monthKey -> ratePercent
   baseMonthKey: string; // Mes base de referencia para precios constantes (ej: '2026-10')
   enabled: boolean; // Si está activo el modo Precios Constantes en toda la app
+  updatedAt?: number;
 }
+
+export interface SyncConfig {
+  householdId: string;
+  apiUrl: string;
+  lastSyncedAt: number | null;
+  autoSync: boolean;
+}
+
+export type SyncState = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';
 
 export interface PeriodSummary {
   periodLabel: string;

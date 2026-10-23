@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import type { Expense, InflationSettings } from './types/finance';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import type { Expense, InflationSettings, SyncConfig, SyncState } from './types/finance';
 import {
   loadExpenses,
   saveExpenses,
@@ -13,6 +13,12 @@ import {
 } from './utils/financeCalculations';
 import { getThisMonthRange } from './utils/dateUtils';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import {
+  getSyncConfig,
+  saveSyncConfig,
+  executeSync,
+  recordDeletedExpense,
+} from './utils/syncManager';
 
 import { SummaryCards } from './components/SummaryCards';
 import { PieChart } from './components/PieChart';
@@ -49,7 +55,62 @@ export const App: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
 
+  // Sincronización en la nube (Cloudflare D1)
+  const [syncConfig, setSyncConfig] = useState<SyncConfig>(() => getSyncConfig());
+  const [syncState, setSyncState] = useState<SyncState>('idle');
+  const [syncMessage, setSyncMessage] = useState<string>('');
+  const syncDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { isInstallable, promptInstall } = useOnlineStatus();
+
+  // Función de sincronización bidireccional silenciosa
+  const runSync = useCallback(async (customConfig?: SyncConfig) => {
+    const cfg = customConfig || syncConfig;
+    if (!cfg.householdId.trim()) {
+      setSyncState('idle');
+      return;
+    }
+
+    const result = await executeSync(expenses, inflationSettings, (state, msg) => {
+      setSyncState(state);
+      if (msg) setSyncMessage(msg);
+    });
+
+    if (result.success) {
+      if (result.updatedExpenses) {
+        setExpenses(result.updatedExpenses);
+      }
+      if (result.updatedSettings) {
+        setInflationSettings(result.updatedSettings);
+      }
+      setSyncConfig(getSyncConfig());
+    }
+  }, [syncConfig, expenses, inflationSettings]);
+
+  // Ejecución retardada para no saturar la red al escribir o editar
+  const triggerDebouncedSync = useCallback(() => {
+    if (!syncConfig.householdId.trim()) return;
+    if (syncDebounceTimer.current) clearTimeout(syncDebounceTimer.current);
+    syncDebounceTimer.current = setTimeout(() => {
+      runSync();
+    }, 1200);
+  }, [syncConfig.householdId, runSync]);
+
+  // Sincronización inicial al montar o al recuperar señal de internet
+  useEffect(() => {
+    if (syncConfig.householdId.trim()) {
+      runSync();
+    }
+
+    const handleOnline = () => {
+      if (syncConfig.householdId.trim()) {
+        runSync();
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [syncConfig.householdId]);
 
   useEffect(() => {
     try {
@@ -87,10 +148,12 @@ export const App: React.FC = () => {
 
   // Manejador unificado para crear o editar gasto
   const handleSaveExpense = (savedExpense: Expense) => {
+    const now = Date.now();
     const normalized: Expense = {
       ...savedExpense,
       category: normalizeCategoryName(savedExpense.category),
       amount: Math.round(savedExpense.amount),
+      updatedAt: now,
     };
 
     if (expenseToEdit) {
@@ -101,6 +164,8 @@ export const App: React.FC = () => {
       // Creación: agregar arriba
       setExpenses(prev => [normalized, ...prev]);
     }
+
+    triggerDebouncedSync();
   };
 
   const handleOpenEdit = (expense: Expense) => {
@@ -109,12 +174,15 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteExpense = (id: string) => {
+    recordDeletedExpense(id);
     setExpenses(prev => prev.filter(e => e.id !== id));
+    triggerDebouncedSync();
   };
 
   const handleRestoreData = (newExpenses: Expense[], newSettings: InflationSettings) => {
     setExpenses(newExpenses);
     setInflationSettings(newSettings);
+    triggerDebouncedSync();
   };
 
   const handleClearData = () => {
@@ -123,7 +191,9 @@ export const App: React.FC = () => {
       rates: {},
       baseMonthKey: new Date().toISOString().slice(0, 7),
       enabled: false,
+      updatedAt: Date.now(),
     });
+    triggerDebouncedSync();
   };
 
   const navigateToTab = (tab: 'home' | 'compare' | 'settings') => {
@@ -283,9 +353,25 @@ export const App: React.FC = () => {
                 expenses={expenses}
                 settings={inflationSettings}
                 indices={indices}
-                onUpdateSettings={setInflationSettings}
+                onUpdateSettings={(newSettings) => {
+                  setInflationSettings(newSettings);
+                  triggerDebouncedSync();
+                }}
                 onRestoreData={handleRestoreData}
                 onClearData={handleClearData}
+                syncConfig={syncConfig}
+                syncState={syncState}
+                syncMessage={syncMessage}
+                onUpdateSyncConfig={(newConfig) => {
+                  setSyncConfig(newConfig);
+                  saveSyncConfig(newConfig);
+                  if (newConfig.householdId.trim()) {
+                    runSync(newConfig);
+                  }
+                }}
+                onTriggerSync={async () => {
+                  await runSync();
+                }}
               />
             </div>
           </div>

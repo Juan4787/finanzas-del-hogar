@@ -1,0 +1,15 @@
+# ============================================================================
+# CLOUDFLARE WORKER + D1 CONFIGURATION
+# Finanzas Del Hogar PWA
+# ============================================================================
+
+name = "finanzas-hogar-api"
+main = "worker/index.ts"
+compatibility_date = "2024-09-23"
+
+# Binding para base de datos SQLite D1
+[[d1_databases]]
+binding = "DB"
+database_name = "finanzas_hogar_db"
+database_id = "local-d1-placeholder" # Reemplazar con el ID devuelto por `npx wrangler d1 create finanzas_hogar_db`
+migrations_dir = "worker"
