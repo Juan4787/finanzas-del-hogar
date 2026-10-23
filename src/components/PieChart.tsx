@@ -26,7 +26,7 @@ export const PieChart: React.FC<PieChartProps> = ({
   data,
   title = 'En qué se fue la plata',
 }) => {
-  const [chartType, setChartType] = useState<'pie' | 'doughnut'>('pie');
+  const [chartType, setChartType] = useState<'pie' | 'doughnut'>('doughnut');
 
   const totalValue = data.reduce((acc, item) => acc + item.value, 0);
 

@@ -277,12 +277,14 @@ export function comparePeriods(
 /**
  * Sugerencia inteligente de categoría basada en historial de gastos:
  * 1. Si el nombre coincide con un gasto previo, sugiere la categoría previa normalizada.
- * 2. Si no coincide, sugiere la categoría más utilizada en general.
- * 3. Si no hay gastos previos, sugiere 'Alimentos'.
+ * 2. Si no coincide, sugiere la/**
+ * Sugerencia inteligente de categoría:
+ * 1. Si el nombre coincide con un gasto previo, sugiere la categoría previa normalizada.
+ * 2. Si no coincide o no hay historial, sugiere 'Supermercado'.
  */
 export function getSuggestedCategory(currentName: string, expenses: Expense[]): string {
   if (!expenses || expenses.length === 0) {
-    return 'Alimentos';
+    return 'Supermercado';
   }
 
   const cleanName = currentName.trim().toLowerCase();
@@ -306,35 +308,20 @@ export function getSuggestedCategory(currentName: string, expenses: Expense[]): 
     }
   }
 
-  const overallCounts: Record<string, number> = {};
-  expenses.forEach(e => {
-    const cat = normalizeCategoryName(e.category);
-    if (cat.toLowerCase() !== 'otros') {
-      overallCounts[cat] = (overallCounts[cat] || 0) + 1;
-    }
-  });
-
-  const topOverall = Object.entries(overallCounts).sort((a, b) => b[1] - a[1])[0];
-  return topOverall ? topOverall[0] : 'Otros';
+  return 'Supermercado';
 }
 
 /**
- * Top de categorías más frecuentes para sugerir en píldoras rápidas
+ * Categorías sugeridas fijas solicitadas por el usuario:
+ * Supermercado, Gimnasio, Electricidad, Gas y Comida de Mascotas.
+ * Se excluyen explícitamente de sugeridos: Expensas, Deporte, Alimentos.
  */
-export function getTopFrequentCategories(expenses: Expense[], limit = 6): string[] {
-  const counts: Record<string, number> = {};
-  expenses.forEach(e => {
-    const cat = normalizeCategoryName(e.category);
-    if (cat.toLowerCase() !== 'otros') {
-      counts[cat] = (counts[cat] || 0) + 1;
-    }
-  });
-
-  const sorted = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([cat]) => cat);
-
-  const defaults = ['Expensas', 'Alimentos', 'Servicios', 'Nafta', 'Salud', 'Deportes'];
-  const merged = Array.from(new Set([...sorted, ...defaults]));
-  return merged.slice(0, limit);
+export function getTopFrequentCategories(_expenses: Expense[], _limit = 5): string[] {
+  return [
+    'Supermercado',
+    'Gimnasio',
+    'Electricidad',
+    'Gas',
+    'Comida de Mascotas',
+  ];
 }
