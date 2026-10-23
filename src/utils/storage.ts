@@ -1,5 +1,6 @@
 import type { Expense, InflationSettings } from '../types/finance';
 import { getMonthKey } from './financeCalculations';
+import { recordDeletedExpense } from './syncManager';
 
 const EXPENSES_STORAGE_KEY = 'finanzas_hogar_expenses_v1';
 const INFLATION_STORAGE_KEY = 'finanzas_hogar_inflation_v1';
@@ -171,23 +172,39 @@ export function generateDemoData(): { expenses: Expense[]; inflation: InflationS
 }
 
 /**
- * Carga los gastos desde localStorage con fallback
+ * Carga los gastos desde localStorage sin inyectar datos basura/demo
  */
 export function loadExpenses(): Expense[] {
   try {
     const raw = localStorage.getItem(EXPENSES_STORAGE_KEY);
     if (!raw) {
-      const demo = generateDemoData();
-      saveExpenses(demo.expenses);
-      return demo.expenses;
+      // La aplicación comienza 100% limpia sin gastos ficticios
+      return [];
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.map(e => ({
-        ...e,
-        amount: Math.round(Number(e.amount) || 0),
-        category: e.category || 'Otros'
-      }));
+      // Purgar de inmediato cualquier gasto de demostración o datos basura residuales
+      const demoItems = parsed.filter(e => typeof e?.id === 'string' && e.id.startsWith('demo-'));
+      if (demoItems.length > 0) {
+        demoItems.forEach(d => {
+          if (d.id) recordDeletedExpense(d.id);
+        });
+      }
+
+      const cleanExpenses = parsed
+        .filter(e => !(typeof e?.id === 'string' && e.id.startsWith('demo-')))
+        .map(e => ({
+          ...e,
+          amount: Math.round(Number(e.amount) || 0),
+          category: e.category || 'Otros',
+        }));
+
+      // Si se purgaron elementos demo, persistir la lista limpia de inmediato
+      if (cleanExpenses.length !== parsed.length) {
+        saveExpenses(cleanExpenses);
+      }
+
+      return cleanExpenses;
     }
   } catch (err) {
     console.warn('Error al leer gastos de localStorage:', err);
@@ -207,22 +224,49 @@ export function saveExpenses(expenses: Expense[]): void {
 }
 
 /**
- * Carga los ajustes de inflación desde localStorage
+ * Carga los ajustes de inflación desde localStorage (limpio por defecto)
  */
 export function loadInflationSettings(): InflationSettings {
   const currentKey = getMonthKey(new Date());
   try {
     const raw = localStorage.getItem(INFLATION_STORAGE_KEY);
     if (!raw) {
-      const demo = generateDemoData();
-      saveInflationSettings(demo.inflation);
-      return demo.inflation;
+      // Sin tasas inventadas y desactivado por defecto
+      return {
+        rates: {},
+        baseMonthKey: currentKey,
+        enabled: false,
+      };
     }
     const parsed = JSON.parse(raw);
+    const rates = parsed.rates || {};
+
+    // Si las tasas coinciden exactamente con los datos de demo (4.2, 3.9, 3.5) generados automáticamente
+    // y no hay gastos reales, limpiar las tasas ficticias
+    const rateVals = Object.values(rates);
+    const isOnlyDemoRates = rateVals.length <= 3 && rateVals.every(v => v === 4.2 || v === 3.9 || v === 3.5);
+    
+    if (isOnlyDemoRates && (!parsed.rates || Object.keys(parsed.rates).length <= 3)) {
+      try {
+        const expRaw = localStorage.getItem(EXPENSES_STORAGE_KEY);
+        const exps = expRaw ? JSON.parse(expRaw) : [];
+        const hasRealExpenses = Array.isArray(exps) && exps.some((e: any) => !e?.id?.startsWith('demo-'));
+        if (!hasRealExpenses) {
+          const cleanSettings: InflationSettings = {
+            rates: {},
+            baseMonthKey: currentKey,
+            enabled: false,
+          };
+          saveInflationSettings(cleanSettings);
+          return cleanSettings;
+        }
+      } catch {}
+    }
+
     return {
-      rates: parsed.rates || {},
+      rates,
       baseMonthKey: parsed.baseMonthKey || currentKey,
-      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
+      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : false,
     };
   } catch (err) {
     console.warn('Error al leer inflación de localStorage:', err);

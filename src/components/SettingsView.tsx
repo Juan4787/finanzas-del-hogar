@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Expense, InflationSettings, SyncConfig, SyncState } from '../types/finance';
 import {
   formatMonthName,
@@ -7,7 +7,6 @@ import {
 import {
   exportBackupJSON,
   exportExpensesCSV,
-  generateDemoData,
 } from '../utils/storage';
 import { generateHouseholdId } from '../utils/syncManager';
 import {
@@ -37,7 +36,7 @@ interface SettingsViewProps {
   syncState: SyncState;
   syncMessage: string;
   onUpdateSyncConfig: (config: SyncConfig) => void;
-  onTriggerSync: () => Promise<void>;
+  onTriggerSync: (customConfig?: SyncConfig) => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -55,6 +54,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newMonthInput, setNewMonthInput] = useState('');
   const [newRateInput, setNewRateInput] = useState('');
   const [copied, setCopied] = useState(false);
+  const [localHouseholdId, setLocalHouseholdId] = useState(syncConfig.householdId || '');
+  const [localApiUrl, setLocalApiUrl] = useState(syncConfig.apiUrl || '');
+
+  useEffect(() => {
+    setLocalHouseholdId(syncConfig.householdId || '');
+  }, [syncConfig.householdId]);
+
+  useEffect(() => {
+    setLocalApiUrl(syncConfig.apiUrl || '');
+  }, [syncConfig.apiUrl]);
+
+  const handleSaveAndSync = () => {
+    const updated: SyncConfig = {
+      ...syncConfig,
+      householdId: localHouseholdId.trim(),
+      apiUrl: localApiUrl.trim(),
+    };
+    onUpdateSyncConfig(updated);
+    onTriggerSync(updated);
+  };
+
   const [confirmModalData, setConfirmModalData] = useState<{
     title: string;
     message: string;
@@ -190,11 +210,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       onChange={(e) => handleRateChange(monthKey, e.target.value)}
                     />
                     <span className="rate-percent-sign">%</span>
+                    <button
+                      type="button"
+                      className="btn-action-icon"
+                      title="Eliminar tasa"
+                      onClick={() => {
+                        const updatedRates = { ...settings.rates };
+                        delete updatedRates[monthKey];
+                        onUpdateSettings({ ...settings, rates: updatedRates });
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {Object.keys(settings.rates).length > 0 && (
+            <button
+              type="button"
+              className="btn-clear-all-rates"
+              style={{
+                marginTop: '12px',
+                background: 'transparent',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                color: '#f87171',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              onClick={() => {
+                onUpdateSettings({
+                  ...settings,
+                  rates: {},
+                  enabled: false,
+                });
+              }}
+            >
+              <Trash2 size={14} />
+              <span>Limpiar todas las tasas de inflación</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -229,35 +291,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="text"
                 className="simple-input"
-                placeholder="Ej: hogar-marta-842"
-                value={syncConfig.householdId}
-                onChange={(e) =>
-                  onUpdateSyncConfig({
-                    ...syncConfig,
-                    householdId: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''),
-                  })
-                }
+                placeholder="Ej: hogar-familia"
+                value={localHouseholdId}
+                onChange={(e) => {
+                  setLocalHouseholdId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveAndSync();
+                  }
+                }}
               />
               <button
                 type="button"
                 className="btn-action-icon"
                 title="Generar código aleatorio"
-                onClick={() =>
-                  onUpdateSyncConfig({
-                    ...syncConfig,
-                    householdId: generateHouseholdId(),
-                  })
-                }
+                onClick={() => {
+                  const rnd = generateHouseholdId();
+                  setLocalHouseholdId(rnd);
+                }}
               >
                 <Sparkles size={16} className="text-amber" />
               </button>
-              {syncConfig.householdId && (
+              {localHouseholdId && (
                 <button
                   type="button"
                   className="btn-action-icon"
                   title="Copiar código"
                   onClick={() => {
-                    navigator.clipboard?.writeText(syncConfig.householdId);
+                    navigator.clipboard?.writeText(localHouseholdId);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   }}
@@ -277,24 +340,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               type="text"
               className="simple-input"
               placeholder="Ej: https://finanzas-hogar-api.workers.dev o /api"
-              value={syncConfig.apiUrl}
-              onChange={(e) =>
-                onUpdateSyncConfig({
-                  ...syncConfig,
-                  apiUrl: e.target.value.trim(),
-                })
-              }
+              value={localApiUrl}
+              onChange={(e) => setLocalApiUrl(e.target.value.trim())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSaveAndSync();
+                }
+              }}
             />
           </div>
 
           <button
             type="button"
             className="btn-simple-sync"
-            disabled={!syncConfig.householdId || syncState === 'syncing'}
-            onClick={() => onTriggerSync()}
+            disabled={!localHouseholdId.trim() || syncState === 'syncing'}
+            onClick={handleSaveAndSync}
           >
             <RefreshCw size={18} className={syncState === 'syncing' ? 'spin-animation' : ''} />
-            <span>{syncState === 'syncing' ? 'Sincronizando...' : 'Sincronizar Ahora con Cloudflare'}</span>
+            <span>{syncState === 'syncing' ? 'Sincronizando...' : 'Conectar y Sincronizar'}</span>
           </button>
 
           {syncConfig.lastSyncedAt && (
@@ -336,25 +400,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileUpload} />
           </label>
 
-          <button
-            className="btn-simple-backup"
-            onClick={() => {
-              setConfirmModalData({
-                title: '¿Cargar datos de ejemplo?',
-                message: 'Se cargarán gastos de demostración y tasas de inflación para probar la app.',
-                confirmLabel: 'Sí, cargar',
-                isDestructive: false,
-                onConfirm: () => {
-                  const demo = generateDemoData();
-                  onRestoreData(demo.expenses, demo.inflation);
-                  setConfirmModalData(null);
-                },
-              });
-            }}
-          >
-            <RefreshCw size={20} className="text-muted" />
-            <span>Cargar Datos de Ejemplo</span>
-          </button>
         </div>
 
         <div className="simple-danger-area">

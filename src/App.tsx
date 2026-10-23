@@ -98,19 +98,42 @@ export const App: React.FC = () => {
 
   // Sincronización inicial al montar o al recuperar señal de internet
   useEffect(() => {
-    if (syncConfig.householdId.trim()) {
-      runSync();
+    // Purgar de inmediato cualquier gasto de demo residual del estado en memoria
+    const demoItems = expenses.filter(e => typeof e.id === 'string' && e.id.startsWith('demo-'));
+    if (demoItems.length > 0) {
+      demoItems.forEach(e => recordDeletedExpense(e.id));
+      const cleanList = expenses.filter(e => !(typeof e.id === 'string' && e.id.startsWith('demo-')));
+      setExpenses(cleanList);
+      saveExpenses(cleanList);
+
+      if (cleanList.length === 0) {
+        const cleanInf: InflationSettings = {
+          rates: {},
+          baseMonthKey: new Date().toISOString().slice(0, 7),
+          enabled: false,
+          updatedAt: Date.now(),
+        };
+        setInflationSettings(cleanInf);
+        saveInflationSettings(cleanInf);
+      }
+      triggerDebouncedSync();
+    }
+
+    const currentCfg = getSyncConfig();
+    if (currentCfg.householdId.trim().length >= 3) {
+      runSync(currentCfg);
     }
 
     const handleOnline = () => {
-      if (syncConfig.householdId.trim()) {
-        runSync();
+      const cfg = getSyncConfig();
+      if (cfg.householdId.trim().length >= 3) {
+        runSync(cfg);
       }
     };
 
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [syncConfig.householdId]);
+  }, []); // Se ejecuta únicamente una vez al montar, NUNCA en cada pulsación de tecla
 
   useEffect(() => {
     try {
@@ -186,13 +209,22 @@ export const App: React.FC = () => {
   };
 
   const handleClearData = () => {
-    setExpenses([]);
-    setInflationSettings({
+    // 1. Encolar todos los IDs actuales como eliminados para que Cloudflare D1 los borre de la nube
+    expenses.forEach(e => {
+      if (e.id) recordDeletedExpense(e.id);
+    });
+
+    const cleanInf: InflationSettings = {
       rates: {},
       baseMonthKey: new Date().toISOString().slice(0, 7),
       enabled: false,
       updatedAt: Date.now(),
-    });
+    };
+
+    setExpenses([]);
+    setInflationSettings(cleanInf);
+    saveExpenses([]);
+    saveInflationSettings(cleanInf);
     triggerDebouncedSync();
   };
 
@@ -365,12 +397,9 @@ export const App: React.FC = () => {
                 onUpdateSyncConfig={(newConfig) => {
                   setSyncConfig(newConfig);
                   saveSyncConfig(newConfig);
-                  if (newConfig.householdId.trim()) {
-                    runSync(newConfig);
-                  }
                 }}
-                onTriggerSync={async () => {
-                  await runSync();
+                onTriggerSync={async (customConfig) => {
+                  await runSync(customConfig);
                 }}
               />
             </div>

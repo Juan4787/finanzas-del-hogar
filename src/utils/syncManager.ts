@@ -200,6 +200,13 @@ export async function executeSync(
         // Si el servidor lo marca como eliminado, lo quitamos de la lista local
         mergedExpenses = mergedExpenses.filter((e) => e.id !== sExp.id);
       } else {
+        // Si el servidor devuelve un gasto de demo/basura residual, no aceptarlo y marcarlo como eliminado
+        if (typeof sExp.id === 'string' && sExp.id.startsWith('demo-')) {
+          recordDeletedExpense(sExp.id);
+          mergedExpenses = mergedExpenses.filter((e) => e.id !== sExp.id);
+          continue;
+        }
+
         const localIdx = mergedExpenses.findIndex((e) => e.id === sExp.id);
         const serverExpenseObj: Expense = {
           id: sExp.id,
