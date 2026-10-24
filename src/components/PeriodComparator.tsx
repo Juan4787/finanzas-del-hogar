@@ -35,11 +35,27 @@ export const PeriodComparator: React.FC<PeriodComparatorProps> = ({
   const [selectedPreset, setSelectedPreset] = useState<PresetOption>(initialPreset);
   const [showCustomRange, setShowCustomRange] = useState(false);
 
-  const [todayISO] = useState(() => getTodayDateInput());
-  const [customStartA, setCustomStartA] = useState(todayISO);
-  const [customEndA, setCustomEndA] = useState(todayISO);
-  const [customStartB, setCustomStartB] = useState(todayISO);
-  const [customEndB, setCustomEndB] = useState(todayISO);
+  const [defaultRanges] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    const startThisMonth = `${y}-${pad(m + 1)}-01`;
+    const today = getTodayDateInput();
+
+    const prevMonthDate = new Date(y, m - 1, 1);
+    const prevMonthEnd = new Date(y, m, 0);
+    const startLastMonth = `${prevMonthDate.getFullYear()}-${pad(prevMonthDate.getMonth() + 1)}-01`;
+    const endLastMonth = `${prevMonthEnd.getFullYear()}-${pad(prevMonthEnd.getMonth() + 1)}-${pad(prevMonthEnd.getDate())}`;
+
+    return { startThisMonth, today, startLastMonth, endLastMonth };
+  });
+
+  const [customStartA, setCustomStartA] = useState(defaultRanges.startThisMonth);
+  const [customEndA, setCustomEndA] = useState(defaultRanges.today);
+  const [customStartB, setCustomStartB] = useState(defaultRanges.startLastMonth);
+  const [customEndB, setCustomEndB] = useState(defaultRanges.endLastMonth);
 
   let rangeA: { start: string; end: string; label: string };
   let rangeB: { start: string; end: string; label: string };
@@ -211,10 +227,16 @@ export const PeriodComparator: React.FC<PeriodComparatorProps> = ({
       {/* Opciones avanzadas de fechas (Discreto para el ayudante) */}
       <div className="simple-advanced-toggle">
         <button
+          type="button"
           className="btn-toggle-advanced"
           onClick={() => {
-            setShowCustomRange(!showCustomRange);
-            if (!showCustomRange) setSelectedPreset('custom');
+            const nextShow = !showCustomRange;
+            setShowCustomRange(nextShow);
+            if (nextShow) {
+              setSelectedPreset('custom');
+            } else if (selectedPreset === 'custom') {
+              setSelectedPreset('month');
+            }
           }}
         >
           <span>Elegir otras fechas específicas</span>

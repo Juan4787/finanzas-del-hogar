@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { Expense } from '../types/finance';
 import { getNowLocalISO, toLocalDateTimeInput, formatModalDatePreview } from '../utils/dateUtils';
 import {
@@ -6,7 +7,7 @@ import {
   getSuggestedCategory,
   getTopFrequentCategories,
 } from '../utils/financeCalculations';
-import { ArrowLeft, X, Check, Sparkles, Pencil } from 'lucide-react';
+import { ArrowLeft, X, Check, Sparkles, Pencil, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface AddExpenseModalProps {
@@ -54,6 +55,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     expenseToEdit ? toLocalDateTimeInput(expenseToEdit.timestamp) : getNowLocalISO()
   );
   const [showCustomDate, setShowCustomDate] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const suggestedCat = useMemo(
     () => getSuggestedCategory(name, allExpenses),
@@ -62,14 +64,38 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
-    if (isOpen) {
-      const timer = setTimeout(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const raf = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || (active !== amountInputRef.current && active !== nameInputRef.current)) {
         amountInputRef.current?.focus();
-      }, 150);
-      return () => clearTimeout(timer);
-    }
+      }
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isOpen]);
 
   // Guardar borrador en tiempo real SOLO si estamos creando uno nuevo
@@ -88,23 +114,36 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
     const cleanAmount = parseInt(amountStr.replace(/\D/g, ''), 10);
     if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      setFormError('Ingresa un monto mayor a $ 0');
       amountInputRef.current?.focus();
       return;
     }
 
     const cleanName = name.trim();
     if (!cleanName) {
+      setFormError('Escribe en qué gastaste (ej: Supermercado, Nafta)');
       nameInputRef.current?.focus();
       return;
     }
 
+    setFormError(null);
     const finalCategory = normalizeCategoryName(categoryInput.trim() || 'Otros');
+
+    let finalIsoTimestamp: string;
+    if (expenseToEdit && timestamp === toLocalDateTimeInput(expenseToEdit.timestamp)) {
+      finalIsoTimestamp = expenseToEdit.timestamp;
+    } else {
+      const parsedDate = timestamp ? new Date(timestamp) : new Date();
+      finalIsoTimestamp = isNaN(parsedDate.getTime())
+        ? new Date().toISOString()
+        : parsedDate.toISOString();
+    }
 
     const expensePayload: Expense = {
       id: expenseToEdit ? expenseToEdit.id : `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: cleanName,
       amount: cleanAmount,
-      timestamp: timestamp || getNowLocalISO(),
+      timestamp: finalIsoTimestamp,
       category: finalCategory,
     };
 
@@ -125,10 +164,12 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
     try {
       confetti({
-        particleCount: 20,
+        particleCount: 18,
         spread: 50,
+        ticks: 80,
         origin: { y: 0.85 },
         colors: ['#10b981', '#3b82f6', '#f59e0b'],
+        disableForReducedMotion: true,
       });
     } catch {}
 
@@ -143,40 +184,60 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     return 'clamp(2.4rem, 8vw, 3.2rem)';
   };
 
-  return (
-    <div className="modal-overlay" onClick={(e) => e.stopPropagation()}>
+  const showSuggestionPill =
+    Boolean(suggestedCat) &&
+    categoryInput.trim().toLowerCase() !== suggestedCat.toLowerCase();
+
+  const modalNode = (
+    <div
+      className="modal-overlay"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       <div
         className="modal-content mobile-sheet animate-slide-up"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-expense-modal-title"
       >
         <div className="modal-header-simple">
-          <button className="btn-back-modal" onClick={onClose} aria-label="Volver atrás">
+          <button type="button" className="btn-back-modal" onClick={onClose} aria-label="Volver atrás">
             <ArrowLeft size={20} />
             <span>Volver</span>
           </button>
           
           <div className="modal-title-with-icon">
             {isEditing && <Pencil size={18} className="text-emerald" />}
-            <h2 className="modal-simple-title">
+            <h2 id="add-expense-modal-title" className="modal-simple-title">
               {isEditing ? 'Editar Gasto' : 'Anotar Gasto'}
             </h2>
           </div>
 
-          <button className="btn-close-simple" onClick={onClose} aria-label="Cerrar">
+          <button type="button" className="btn-close-simple" onClick={onClose} aria-label="Cerrar">
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="modal-simple-form">
+        <form onSubmit={handleSubmit} className="modal-simple-form" noValidate>
+          {formError && (
+            <div className="form-error-banner" role="alert">
+              <AlertCircle size={16} />
+              <span>{formError}</span>
+            </div>
+          )}
+
           {/* Monto fluido que se adapta a cualquier tamaño sin cortarse jamás */}
           <div className="simple-amount-card">
-            <label className="simple-label">
+            <label htmlFor="expense-amount-input" className="simple-label">
               {isEditing ? 'Monto a modificar' : '¿Cuánto gastaste?'}
             </label>
             <div className="simple-amount-row-fluid">
               <span className="simple-currency-fluid">$</span>
               <input
+                id="expense-amount-input"
                 ref={amountInputRef}
                 type="text"
                 inputMode="numeric"
@@ -188,8 +249,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 onChange={(e) => {
                   const num = e.target.value.replace(/\D/g, '');
                   setAmountStr(num);
+                  if (formError) setFormError(null);
                 }}
-                required
               />
               {amountStr && (
                 <button
@@ -210,17 +271,20 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
           {/* Nombre / Concepto con botón para limpiar rápido */}
           <div className="simple-field">
-            <label className="simple-label">¿En qué?</label>
+            <label htmlFor="expense-name-input" className="simple-label">¿En qué?</label>
             <div className="simple-input-with-clear">
               <input
+                id="expense-name-input"
                 ref={nameInputRef}
                 type="text"
                 className="simple-input"
                 placeholder="Ej: Coto, Nafta, Panadería, Farmacia"
                 value={name}
                 onFocus={(e) => e.target.select()}
-                onChange={(e) => setName(e.target.value)}
-                required
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (formError) setFormError(null);
+                }}
               />
               {name && (
                 <button
@@ -241,10 +305,13 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
           {/* Categoría simple con sugerencia */}
           <div className="simple-field">
-            <label className="simple-label">Categoría <span className="label-sub">(opcional)</span></label>
+            <label htmlFor="expense-category-input" className="simple-label">
+              Categoría <span className="label-sub">(opcional)</span>
+            </label>
             
             <div className="simple-input-with-clear">
               <input
+                id="expense-category-input"
                 type="text"
                 className="simple-input"
                 placeholder={suggestedCat ? `Ej: ${suggestedCat}` : 'Opcional'}
@@ -275,8 +342,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               )}
             </div>
 
-            {/* Sugerencia inteligente de 1 tap si no está en modo edición */}
-            {!isEditing && suggestedCat && (
+            {/* Sugerencia inteligente de 1 tap cuando difiere de la categoría escrita */}
+            {showSuggestionPill && (
               <button
                 type="button"
                 className="simple-suggestion-pill"
@@ -292,7 +359,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 <button
                   key={cat}
                   type="button"
-                  className={`simple-chip ${categoryInput.toLowerCase() === cat.toLowerCase() ? 'active' : ''}`}
+                  className={`simple-chip ${categoryInput.trim().toLowerCase() === cat.toLowerCase() ? 'active' : ''}`}
                   onClick={() => setCategoryInput(cat)}
                 >
                   {cat}
@@ -340,4 +407,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalNode, document.body)
+    : modalNode;
 };

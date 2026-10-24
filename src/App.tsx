@@ -19,6 +19,7 @@ import {
   saveSyncConfig,
   executeSync,
   recordDeletedExpense,
+  getDeletedExpensesQueue,
 } from './utils/syncManager';
 
 import { SummaryCards } from './components/SummaryCards';
@@ -86,14 +87,43 @@ export const App: React.FC = () => {
 
     if (result.success) {
       if (result.updatedExpenses) {
-        expensesRef.current = result.updatedExpenses;
-        setExpenses(result.updatedExpenses);
-        saveExpenses(result.updatedExpenses);
+        const pendingDeletes = new Set(getDeletedExpensesQueue().map((d) => d.id));
+        const liveMap = new Map(expensesRef.current.map((e) => [e.id, e]));
+        const finalMap = new Map<string, Expense>();
+
+        for (const exp of result.updatedExpenses) {
+          if (pendingDeletes.has(exp.id)) continue;
+          const live = liveMap.get(exp.id);
+          if (live && (live.updatedAt || 0) > (exp.updatedAt || 0)) {
+            finalMap.set(exp.id, live);
+          } else {
+            finalMap.set(exp.id, exp);
+          }
+        }
+
+        for (const live of expensesRef.current) {
+          if (!pendingDeletes.has(live.id) && !finalMap.has(live.id)) {
+            finalMap.set(live.id, live);
+          }
+        }
+
+        const reconciled = Array.from(finalMap.values()).sort((a, b) => {
+          const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+          if (timeDiff !== 0) return timeDiff;
+          return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+
+        expensesRef.current = reconciled;
+        setExpenses(reconciled);
+        saveExpenses(reconciled);
       }
       if (result.updatedSettings) {
-        inflationSettingsRef.current = result.updatedSettings;
-        setInflationSettings(result.updatedSettings);
-        saveInflationSettings(result.updatedSettings);
+        const liveSettings = inflationSettingsRef.current;
+        if ((result.updatedSettings.updatedAt || 0) >= (liveSettings.updatedAt || 0)) {
+          inflationSettingsRef.current = result.updatedSettings;
+          setInflationSettings(result.updatedSettings);
+          saveInflationSettings(result.updatedSettings);
+        }
       }
       setSyncConfig(getSyncConfig());
     }
@@ -166,8 +196,11 @@ export const App: React.FC = () => {
       const d = new Date(e.timestamp);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
-    return computeCumulativePriceIndices(inflationSettings.rates, expenseMonths);
-  }, [inflationSettings.rates, expenses]);
+    return computeCumulativePriceIndices(
+      inflationSettings.rates,
+      [...expenseMonths, inflationSettings.baseMonthKey]
+    );
+  }, [inflationSettings.rates, inflationSettings.baseMonthKey, expenses]);
 
   // Manejador unificado para crear o editar gasto
   const handleSaveExpense = (savedExpense: Expense) => {

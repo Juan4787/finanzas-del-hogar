@@ -120,22 +120,52 @@ export function computeCumulativePriceIndices(
   rates: Record<string, number>,
   allMonthKeys: string[]
 ): Record<string, number> {
-  const uniqueMonths = Array.from(new Set([...Object.keys(rates), ...allMonthKeys])).filter(Boolean);
-  uniqueMonths.sort(); // Orden cronológico (ej: 2026-01, 2026-02, ...)
+  const rawMonths = Array.from(new Set([...Object.keys(rates), ...allMonthKeys])).filter(Boolean);
+  rawMonths.sort(); // Orden cronológico (ej: 2026-01, 2026-02, ...)
 
   const indices: Record<string, number> = {};
-  if (uniqueMonths.length === 0) return indices;
+  if (rawMonths.length === 0) return indices;
+
+  // Rellenar meses intermedios entre el primer y último mes para mantener continuidad
+  const uniqueMonths: string[] = [];
+  const [startY, startM] = rawMonths[0].split('-').map(Number);
+  const [endY, endM] = rawMonths[rawMonths.length - 1].split('-').map(Number);
+
+  if (startY && startM && endY && endM) {
+    let y = startY;
+    let m = startM;
+    let safety = 0;
+    while ((y < endY || (y === endY && m <= endM)) && safety < 240) {
+      uniqueMonths.push(`${y}-${String(m).padStart(2, '0')}`);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+      safety++;
+    }
+  } else {
+    uniqueMonths.push(...rawMonths);
+  }
 
   let currentIndex = 100.0;
   for (let i = 0; i < uniqueMonths.length; i++) {
     const m = uniqueMonths[i];
-    const rate = rates[m] || 0; // Tasa en % para este mes
     if (i === 0) {
       // Mes inicial arranca en 100
       currentIndex = 100.0;
     } else {
-      // El índice se actualiza con la inflación del período: IPC_t = IPC_{t-1} * (1 + rate / 100)
-      currentIndex = currentIndex * (1 + rate / 100);
+      const prevMonth = uniqueMonths[i - 1];
+      const explicitRate = rates[m];
+      // Si el usuario cargó la inflación en el mes origen (i=0) y dejó el mes siguiente sin tasa explícita,
+      // aplicamos la tasa del mes origen para reflejar la inflación ocurrida entre ambos meses.
+      const effectiveRate =
+        explicitRate !== undefined && explicitRate !== 0
+          ? explicitRate
+          : i === 1 && rates[prevMonth]
+          ? rates[prevMonth]
+          : 0;
+      currentIndex = currentIndex * (1 + effectiveRate / 100);
     }
     indices[m] = currentIndex;
   }

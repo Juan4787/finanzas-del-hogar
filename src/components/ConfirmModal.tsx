@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, Trash2 } from 'lucide-react';
 
 interface ConfirmModalProps {
@@ -22,14 +23,48 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const onCancelRef = React.useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCancelRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
-    <div className="modal-overlay" onClick={(e) => e.stopPropagation()}>
+  const modalNode = (
+    <div
+      className="modal-overlay modal-overlay-center"
+      onClick={(e) => {
+        e.stopPropagation();
+        onCancel();
+      }}
+    >
       <div
         className="modal-content confirm-modal-card animate-slide-up"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+        aria-describedby="confirm-modal-desc"
       >
         <div className="confirm-icon-box">
           {isDestructive ? (
@@ -39,8 +74,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           )}
         </div>
 
-        <h3 className="confirm-modal-title">{title}</h3>
-        <p className="confirm-modal-message">{message}</p>
+        <h3 id="confirm-modal-title" className="confirm-modal-title">{title}</h3>
+        <p id="confirm-modal-desc" className="confirm-modal-message">{message}</p>
 
         <div className="confirm-modal-actions">
           <button type="button" className="btn-confirm-cancel" onClick={onCancel}>
@@ -57,4 +92,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalNode, document.body)
+    : modalNode;
 };

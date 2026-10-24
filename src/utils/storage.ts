@@ -1,5 +1,6 @@
 import type { Expense, InflationSettings } from '../types/finance';
 import { getMonthKey } from './financeCalculations';
+import { getTodayDateInput } from './dateUtils';
 import { recordDeletedExpense } from './syncManager';
 
 const EXPENSES_STORAGE_KEY = 'finanzas_hogar_expenses_v1';
@@ -268,6 +269,7 @@ export function loadInflationSettings(): InflationSettings {
       rates,
       baseMonthKey: parsed.baseMonthKey || currentKey,
       enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : false,
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : undefined,
     };
   } catch (err) {
     console.warn('Error al leer inflación de localStorage:', err);
@@ -304,7 +306,7 @@ export function exportBackupJSON(expenses: Expense[], inflation: InflationSettin
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `finanzas-hogar-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `finanzas-hogar-respaldo-${getTodayDateInput()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -328,7 +330,7 @@ export function exportExpensesCSV(expenses: Expense[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `finanzas-hogar-gastos-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `finanzas-hogar-gastos-${getTodayDateInput()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

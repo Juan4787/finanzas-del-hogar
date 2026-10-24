@@ -113,11 +113,19 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                 </div>
 
                 <div className="expense-right-side">
-                  <span className="expense-item-amount">{formatCurrency(displayAmount)}</span>
+                  <div className="expense-amount-stack">
+                    <span className="expense-item-amount">{formatCurrency(displayAmount)}</span>
+                    {settings.enabled && constant !== nominal && (
+                      <span className="expense-constant-hint" title="Monto nominal original">
+                        Orig: {formatCurrency(nominal)}
+                      </span>
+                    )}
+                  </div>
                   
                   {/* Botones de acción: Editar (Lápiz) y Borrar (Tacho) */}
                   <div className="expense-action-buttons">
                     <button
+                      type="button"
                       className="btn-action-icon btn-edit-pencil"
                       title="Editar gasto"
                       aria-label={`Editar ${item.name}`}
@@ -127,6 +135,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                     </button>
                     
                     <button
+                      type="button"
                       className="btn-action-icon btn-trash-delete"
                       title="Borrar gasto"
                       aria-label={`Borrar ${item.name}`}

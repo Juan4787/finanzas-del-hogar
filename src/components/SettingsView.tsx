@@ -3,12 +3,13 @@ import type { Expense, InflationSettings, SyncConfig, SyncState } from '../types
 import {
   formatMonthName,
   getMonthKey,
+  normalizeCategoryName,
 } from '../utils/financeCalculations';
 import {
   exportBackupJSON,
   exportExpensesCSV,
 } from '../utils/storage';
-import { generateHouseholdId } from '../utils/syncManager';
+import { generateHouseholdId, DEFAULT_API_URL } from '../utils/syncManager';
 import {
   Download,
   Upload,
@@ -22,6 +23,7 @@ import {
   AlertCircle,
   Copy,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -51,15 +53,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateSyncConfig,
   onTriggerSync,
 }) => {
-  const [newMonthInput, setNewMonthInput] = useState('');
+  const [newMonthInput, setNewMonthInput] = useState(() => {
+    const prev = new Date();
+    prev.setMonth(prev.getMonth() - 1);
+    return getMonthKey(prev);
+  });
   const [newRateInput, setNewRateInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [localHouseholdId, setLocalHouseholdId] = useState(syncConfig.householdId || '');
-  const [localApiUrl, setLocalApiUrl] = useState(syncConfig.apiUrl || '');
+  const [localApiUrl, setLocalApiUrl] = useState(syncConfig.apiUrl || DEFAULT_API_URL);
+  const [backupFeedback, setBackupFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const handleSaveAndSync = () => {
     const nextHousehold = localHouseholdId.trim();
-    const nextApiUrl = localApiUrl.trim();
+    const nextApiUrl = localApiUrl.trim() || DEFAULT_API_URL;
+    setLocalApiUrl(nextApiUrl);
+
     const hasEndpointChanged =
       nextHousehold !== syncConfig.householdId || nextApiUrl !== syncConfig.apiUrl;
 
@@ -110,7 +122,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ...settings,
       rates: { ...settings.rates, [newMonthInput]: num },
     });
-    setNewMonthInput('');
     setNewRateInput('');
   };
 
@@ -122,10 +133,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        if (json.expenses && Array.isArray(json.expenses)) {
-          onRestoreData(json.expenses, json.inflation || settings);
+        if (!json || !Array.isArray(json.expenses)) {
+          setBackupFeedback({
+            type: 'error',
+            text: 'El archivo seleccionado no tiene un formato de respaldo válido.',
+          });
+          return;
         }
-      } catch {}
+
+        const sanitizedExpenses: Expense[] = json.expenses
+          .filter((item: any) => item && (item.name || item.amount))
+          .map((item: any, idx: number) => ({
+            id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `restored-${Date.now()}-${idx}`,
+            name: String(item.name || 'Gasto').trim(),
+            amount: Math.max(0, Math.round(Number(item.amount) || 0)),
+            category: normalizeCategoryName(item.category),
+            timestamp: item.timestamp || new Date().toISOString(),
+            notes: item.notes ? String(item.notes) : undefined,
+            updatedAt: Date.now(),
+          }));
+
+        const restoredInflation: InflationSettings = json.inflation
+          ? {
+              rates: json.inflation.rates || {},
+              baseMonthKey: json.inflation.baseMonthKey || settings.baseMonthKey,
+              enabled: Boolean(json.inflation.enabled),
+              updatedAt: Date.now(),
+            }
+          : settings;
+
+        if (expenses.length > 0) {
+          setConfirmModalData({
+            title: '¿Restaurar copia de seguridad?',
+            message: `Se reemplazarán los gastos actuales por los ${sanitizedExpenses.length} gastos del archivo "${file.name}".`,
+            confirmLabel: 'Sí, restaurar',
+            isDestructive: false,
+            onConfirm: () => {
+              onRestoreData(sanitizedExpenses, restoredInflation);
+              setConfirmModalData(null);
+              setBackupFeedback({
+                type: 'success',
+                text: `Copia restaurada con éxito (${sanitizedExpenses.length} gastos cargados).`,
+              });
+            },
+          });
+        } else {
+          onRestoreData(sanitizedExpenses, restoredInflation);
+          setBackupFeedback({
+            type: 'success',
+            text: `Copia restaurada con éxito (${sanitizedExpenses.length} gastos cargados).`,
+          });
+        }
+      } catch {
+        setBackupFeedback({
+          type: 'error',
+          text: 'No se pudo leer el archivo JSON. Verifica que sea una copia válida.',
+        });
+      }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -199,6 +263,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="simple-rates-list">
             {allMonths.map((monthKey) => {
               const isBase = monthKey === settings.baseMonthKey;
+              const hasRate = settings.rates[monthKey] !== undefined;
               return (
                 <div key={monthKey} className={`rate-row ${isBase ? 'is-base' : ''}`}>
                   <span className="rate-month-name">
@@ -210,16 +275,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       type="number"
                       step="0.1"
                       className="simple-rate-number"
-                      value={settings.rates[monthKey] !== undefined ? settings.rates[monthKey] : ''}
+                      aria-label={`Inflación de ${formatMonthName(monthKey)}`}
+                      value={hasRate ? settings.rates[monthKey] : ''}
                       placeholder="0.0"
                       onChange={(e) => handleRateChange(monthKey, e.target.value)}
                     />
                     <span className="rate-percent-sign">%</span>
                     <button
                       type="button"
-                      className="btn-action-icon"
-                      title="Eliminar tasa"
+                      className="btn-action-icon btn-trash-delete"
+                      title={hasRate ? 'Eliminar tasa' : 'Sin tasa cargada'}
+                      aria-label={`Eliminar tasa de ${formatMonthName(monthKey)}`}
+                      disabled={!hasRate}
                       onClick={() => {
+                        if (!hasRate) return;
                         const updatedRates = { ...settings.rates };
                         delete updatedRates[monthKey];
                         onUpdateSettings({ ...settings, rates: updatedRates });
@@ -237,24 +306,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <button
               type="button"
               className="btn-clear-all-rates"
-              style={{
-                marginTop: '12px',
-                background: 'transparent',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
-                color: '#f87171',
-                padding: '6px 14px',
-                borderRadius: '8px',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
               onClick={() => {
-                onUpdateSettings({
-                  ...settings,
-                  rates: {},
-                  enabled: false,
+                setConfirmModalData({
+                  title: '¿Limpiar tasas de inflación?',
+                  message: 'Se borrarán todas las tasas mensuales cargadas y se desactivará la vista a precios constantes.',
+                  confirmLabel: 'Sí, limpiar tasas',
+                  isDestructive: true,
+                  onConfirm: () => {
+                    onUpdateSettings({
+                      ...settings,
+                      rates: {},
+                      enabled: false,
+                    });
+                    setConfirmModalData(null);
+                  },
                 });
               }}
             >
@@ -291,27 +356,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="sync-settings-fields">
           <div className="simple-field">
-            <label className="simple-label">Código del Hogar (Identificador familiar)</label>
+            <label htmlFor="household-id-input" className="simple-label">
+              Código del Hogar (Identificador familiar)
+            </label>
             <div className="household-id-row">
-              <input
-                type="text"
-                className="simple-input"
-                placeholder="Ej: hogar-familia"
-                value={localHouseholdId}
-                onChange={(e) => {
-                  setLocalHouseholdId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''));
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSaveAndSync();
-                  }
-                }}
-              />
+              <div className="simple-input-with-clear" style={{ flex: 1, minWidth: 0 }}>
+                <input
+                  id="household-id-input"
+                  type="text"
+                  className="simple-input"
+                  placeholder="Ej: hogar-familia"
+                  value={localHouseholdId}
+                  onChange={(e) => {
+                    setLocalHouseholdId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveAndSync();
+                    }
+                  }}
+                />
+                {localHouseholdId && (
+                  <button
+                    type="button"
+                    className="btn-input-clear"
+                    title="Limpiar código"
+                    aria-label="Limpiar código"
+                    onClick={() => setLocalHouseholdId('')}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 className="btn-action-icon"
                 title="Generar código aleatorio"
+                aria-label="Generar código aleatorio"
                 onClick={() => {
                   const rnd = generateHouseholdId();
                   setLocalHouseholdId(rnd);
@@ -324,6 +406,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   className="btn-action-icon"
                   title="Copiar código"
+                  aria-label="Copiar código"
                   onClick={() => {
                     navigator.clipboard?.writeText(localHouseholdId);
                     setCopied(true);
@@ -338,13 +421,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div className="simple-field">
-            <label className="simple-label">
+            <label htmlFor="api-url-input" className="simple-label">
               URL de la API Cloudflare Worker <span className="label-sub">(opcional)</span>
             </label>
             <input
+              id="api-url-input"
               type="text"
               className="simple-input"
-              placeholder="Ej: https://finanzas-hogar-api.workers.dev o /api"
+              placeholder={DEFAULT_API_URL}
               value={localApiUrl}
               onChange={(e) => setLocalApiUrl(e.target.value.trim())}
               onKeyDown={(e) => {
@@ -359,11 +443,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             type="button"
             className="btn-simple-sync"
-            disabled={!localHouseholdId.trim() || syncState === 'syncing'}
+            disabled={(!localHouseholdId.trim() && !syncConfig.householdId) || syncState === 'syncing'}
             onClick={handleSaveAndSync}
           >
             <RefreshCw size={18} className={syncState === 'syncing' ? 'spin-animation' : ''} />
-            <span>{syncState === 'syncing' ? 'Sincronizando...' : 'Conectar y Sincronizar'}</span>
+            <span>
+              {syncState === 'syncing'
+                ? 'Sincronizando...'
+                : !localHouseholdId.trim() && syncConfig.householdId
+                ? 'Desconectar de la nube (usar modo local)'
+                : 'Conectar y Sincronizar'}
+            </span>
           </button>
 
           {syncConfig.lastSyncedAt && (
@@ -382,8 +472,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="simple-card">
         <h3 className="simple-section-title">Copias de Seguridad Manuales</h3>
 
+        {backupFeedback && (
+          <div
+            className={`backup-feedback-banner ${
+              backupFeedback.type === 'success' ? 'feedback-success' : 'feedback-error'
+            }`}
+            role="status"
+          >
+            {backupFeedback.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
+            <span>{backupFeedback.text}</span>
+          </div>
+        )}
+
         <div className="simple-backup-buttons">
           <button
+            type="button"
             className="btn-simple-backup"
             onClick={() => exportBackupJSON(expenses, settings)}
           >
@@ -392,6 +495,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
 
           <button
+            type="button"
             className="btn-simple-backup"
             onClick={() => exportExpensesCSV(expenses)}
           >
@@ -409,6 +513,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="simple-danger-area">
           <button
+            type="button"
             className="btn-simple-danger"
             onClick={() => {
               setConfirmModalData({

@@ -32,7 +32,7 @@ export function getSyncConfig(): SyncConfig {
       const parsed = JSON.parse(raw);
       return {
         householdId: parsed.householdId || '',
-        apiUrl: parsed.apiUrl !== undefined ? parsed.apiUrl : DEFAULT_API_URL,
+        apiUrl: parsed.apiUrl?.trim() ? parsed.apiUrl.trim() : DEFAULT_API_URL,
         lastSyncedAt: parsed.lastSyncedAt || null,
         autoSync: parsed.autoSync !== undefined ? parsed.autoSync : true,
       };
@@ -82,6 +82,24 @@ export function recordDeletedExpense(id: string): void {
 }
 
 /**
+ * Limpia de la cola únicamente los IDs que fueron enviados y confirmados
+ */
+export function removeSyncedDeletedExpenses(syncedItems: Array<{ id: string; updatedAt: number }>): void {
+  try {
+    const syncedMap = new Map(syncedItems.map((i) => [i.id, i.updatedAt]));
+    const remaining = getDeletedExpensesQueue().filter((item) => {
+      const syncedTime = syncedMap.get(item.id);
+      return syncedTime === undefined || item.updatedAt > syncedTime;
+    });
+    if (remaining.length === 0) {
+      localStorage.removeItem(DELETED_EXPENSES_QUEUE_KEY);
+    } else {
+      localStorage.setItem(DELETED_EXPENSES_QUEUE_KEY, JSON.stringify(remaining));
+    }
+  } catch {}
+}
+
+/**
  * Limpia la cola de eliminados confirmados
  */
 export function clearDeletedExpensesQueue(): void {
@@ -122,7 +140,7 @@ export async function executeSync(
   onStatusChange?.('syncing', 'Sincronizando con Cloudflare D1...');
 
   try {
-    const baseUrl = (config.apiUrl || '').replace(/\/+$/, '');
+    const baseUrl = (config.apiUrl?.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
     const syncUrl = `${baseUrl}/api/sync`;
 
     const deletedItems = getDeletedExpensesQueue();
@@ -159,7 +177,7 @@ export async function executeSync(
         rates: currentSettings.rates,
         baseMonthKey: currentSettings.baseMonthKey,
         enabled: currentSettings.enabled,
-        updatedAt: currentSettings.updatedAt || now,
+        updatedAt: currentSettings.updatedAt ?? 0,
       },
     };
 
@@ -181,8 +199,13 @@ export async function executeSync(
       throw new Error(data.error || 'Respuesta de sincronización no exitosa');
     }
 
-    // Limpiamos la cola de eliminados sincronizados
-    clearDeletedExpensesQueue();
+    // Limpiamos únicamente los eliminados que fueron sincronizados en este lote
+    removeSyncedDeletedExpenses(deletedItems);
+
+    // Obtenemos los eliminados que hayan ocurrido mientras la petición estaba en vuelo
+    const pendingDeletes = new Map(
+      getDeletedExpensesQueue().map((d) => [d.id, d.updatedAt])
+    );
 
     // Actualizamos la fecha del último sync
     const newSyncTime = data.serverTime || Date.now();
@@ -193,11 +216,12 @@ export async function executeSync(
 
     // Fusión de gastos (Merge LWW con el servidor)
     const serverExpenses = data.serverExpenses || [];
-    let mergedExpenses = [...effectiveExpenses];
+    let mergedExpenses = effectiveExpenses.filter((e) => !pendingDeletes.has(e.id));
 
     for (const sExp of serverExpenses) {
-      if (sExp.deleted) {
-        // Si el servidor lo marca como eliminado, lo quitamos de la lista local
+      const pendingDeleteTime = pendingDeletes.get(sExp.id);
+      if (sExp.deleted || (pendingDeleteTime !== undefined && pendingDeleteTime >= (sExp.updatedAt || 0))) {
+        // Si el servidor o la cola local en vuelo lo marca como eliminado, lo quitamos
         mergedExpenses = mergedExpenses.filter((e) => e.id !== sExp.id);
       } else {
         // Si el servidor devuelve un gasto de demo/basura residual, no aceptarlo y marcarlo como eliminado
