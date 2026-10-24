@@ -42,6 +42,12 @@ const TAB_STORAGE_KEY = 'finanzas_active_tab_v1';
 export const App: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>(() => loadExpenses());
   const [inflationSettings, setInflationSettings] = useState<InflationSettings>(() => loadInflationSettings());
+
+  const expensesRef = useRef<Expense[]>(expenses);
+  expensesRef.current = expenses;
+
+  const inflationSettingsRef = useRef<InflationSettings>(inflationSettings);
+  inflationSettingsRef.current = inflationSettings;
   
   const [activeTab, setActiveTab] = useState<'home' | 'compare' | 'settings'>(() => {
     try {
@@ -64,37 +70,50 @@ export const App: React.FC = () => {
   const { isInstallable, promptInstall } = useOnlineStatus();
 
   // Función de sincronización bidireccional silenciosa
-  const runSync = useCallback(async (customConfig?: SyncConfig) => {
-    const cfg = customConfig || syncConfig;
+  const runSync = useCallback(async (customConfig?: SyncConfig, customExpenses?: Expense[]) => {
+    const cfg = customConfig || getSyncConfig();
     if (!cfg.householdId.trim()) {
       setSyncState('idle');
       return;
     }
 
-    const result = await executeSync(expenses, inflationSettings, (state, msg) => {
+    const expsToSync = customExpenses || expensesRef.current;
+    const inflToSync = inflationSettingsRef.current;
+
+    const result = await executeSync(expsToSync, inflToSync, (state, msg) => {
       setSyncState(state);
       if (msg) setSyncMessage(msg);
     });
 
     if (result.success) {
       if (result.updatedExpenses) {
-        setExpenses(result.updatedExpenses);
+        // SEGURIDAD CRÍTICA: Nunca permitir que una respuesta vacía del servidor borre gastos locales
+        const safeExpenses = (result.updatedExpenses.length > 0 || expsToSync.length === 0)
+          ? result.updatedExpenses
+          : expsToSync;
+
+        expensesRef.current = safeExpenses;
+        setExpenses(safeExpenses);
+        saveExpenses(safeExpenses);
       }
       if (result.updatedSettings) {
+        inflationSettingsRef.current = result.updatedSettings;
         setInflationSettings(result.updatedSettings);
+        saveInflationSettings(result.updatedSettings);
       }
       setSyncConfig(getSyncConfig());
     }
-  }, [syncConfig, expenses, inflationSettings]);
+  }, []);
 
   // Ejecución retardada para no saturar la red al escribir o editar
-  const triggerDebouncedSync = useCallback(() => {
-    if (!syncConfig.householdId.trim()) return;
+  const triggerDebouncedSync = useCallback((customExpenses?: Expense[]) => {
+    const cfg = getSyncConfig();
+    if (!cfg.householdId.trim()) return;
     if (syncDebounceTimer.current) clearTimeout(syncDebounceTimer.current);
     syncDebounceTimer.current = setTimeout(() => {
-      runSync();
+      runSync(cfg, customExpenses || expensesRef.current);
     }, 1200);
-  }, [syncConfig.householdId, runSync]);
+  }, [runSync]);
 
   // Sincronización inicial al montar o al recuperar señal de internet
   useEffect(() => {
@@ -179,16 +198,22 @@ export const App: React.FC = () => {
       updatedAt: now,
     };
 
+    let nextExpenses: Expense[];
     if (expenseToEdit) {
       // Edición: actualizar el elemento existente
-      setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+      nextExpenses = expensesRef.current.map(e => e.id === normalized.id ? normalized : e);
       setExpenseToEdit(null);
     } else {
       // Creación: agregar arriba
-      setExpenses(prev => [normalized, ...prev]);
+      nextExpenses = [normalized, ...expensesRef.current];
     }
 
-    triggerDebouncedSync();
+    // Persistencia síncrona inmediata en Ref, Estado y LocalStorage
+    expensesRef.current = nextExpenses;
+    setExpenses(nextExpenses);
+    saveExpenses(nextExpenses);
+
+    triggerDebouncedSync(nextExpenses);
   };
 
   const handleOpenEdit = (expense: Expense) => {
@@ -198,19 +223,26 @@ export const App: React.FC = () => {
 
   const handleDeleteExpense = (id: string) => {
     recordDeletedExpense(id);
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    triggerDebouncedSync();
+    const nextExpenses = expensesRef.current.filter(e => e.id !== id);
+    expensesRef.current = nextExpenses;
+    setExpenses(nextExpenses);
+    saveExpenses(nextExpenses);
+    triggerDebouncedSync(nextExpenses);
   };
 
   const handleRestoreData = (newExpenses: Expense[], newSettings: InflationSettings) => {
+    expensesRef.current = newExpenses;
+    inflationSettingsRef.current = newSettings;
     setExpenses(newExpenses);
     setInflationSettings(newSettings);
-    triggerDebouncedSync();
+    saveExpenses(newExpenses);
+    saveInflationSettings(newSettings);
+    triggerDebouncedSync(newExpenses);
   };
 
   const handleClearData = () => {
     // 1. Encolar todos los IDs actuales como eliminados para que Cloudflare D1 los borre de la nube
-    expenses.forEach(e => {
+    expensesRef.current.forEach(e => {
       if (e.id) recordDeletedExpense(e.id);
     });
 
@@ -221,11 +253,13 @@ export const App: React.FC = () => {
       updatedAt: Date.now(),
     };
 
+    expensesRef.current = [];
+    inflationSettingsRef.current = cleanInf;
     setExpenses([]);
     setInflationSettings(cleanInf);
     saveExpenses([]);
     saveInflationSettings(cleanInf);
-    triggerDebouncedSync();
+    triggerDebouncedSync([]);
   };
 
   const navigateToTab = (tab: 'home' | 'compare' | 'settings') => {

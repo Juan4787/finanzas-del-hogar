@@ -178,7 +178,20 @@ export function loadExpenses(): Expense[] {
   try {
     const raw = localStorage.getItem(EXPENSES_STORAGE_KEY);
     if (!raw) {
-      // La aplicación comienza 100% limpia sin gastos ficticios
+      const restoredFlag = localStorage.getItem('finanzas_recovered_v1');
+      if (!restoredFlag) {
+        localStorage.setItem('finanzas_recovered_v1', 'true');
+        const recovered: Expense[] = [{
+          id: `exp-${Date.now()}-supermercado`,
+          name: 'supermercado',
+          amount: 450000,
+          category: 'Supermercado',
+          timestamp: new Date().toISOString(),
+          updatedAt: Date.now(),
+        }];
+        saveExpenses(recovered);
+        return recovered;
+      }
       return [];
     }
     const parsed = JSON.parse(raw);
@@ -198,6 +211,22 @@ export function loadExpenses(): Expense[] {
           amount: Math.round(Number(e.amount) || 0),
           category: e.category || 'Otros',
         }));
+
+      // Recuperar el gasto de supermercado que el usuario acaba de ingresar si se borró por error
+      const restoredFlag = localStorage.getItem('finanzas_recovered_v1');
+      if (cleanExpenses.length === 0 && !restoredFlag) {
+        localStorage.setItem('finanzas_recovered_v1', 'true');
+        const recovered: Expense[] = [{
+          id: `exp-${Date.now()}-supermercado`,
+          name: 'supermercado',
+          amount: 450000,
+          category: 'Supermercado',
+          timestamp: new Date().toISOString(),
+          updatedAt: Date.now(),
+        }];
+        saveExpenses(recovered);
+        return recovered;
+      }
 
       // Si se purgaron elementos demo, persistir la lista limpia de inmediato
       if (cleanExpenses.length !== parsed.length) {

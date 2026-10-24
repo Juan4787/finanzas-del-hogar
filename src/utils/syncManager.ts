@@ -127,10 +127,21 @@ export async function executeSync(
 
     const deletedItems = getDeletedExpensesQueue();
 
-    // Preparamos los gastos para enviar, asignando updatedAt si no tienen
+    // Leemos el estado local más fresco para que ningún gasto nuevo se pierda por desfase de closure
+    let effectiveExpenses = currentExpenses;
+    try {
+      const rawStored = localStorage.getItem('finanzas_hogar_expenses_v1');
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored);
+        if (Array.isArray(parsed) && parsed.length > effectiveExpenses.length) {
+          effectiveExpenses = parsed;
+        }
+      }
+    } catch {}
+
     const now = Date.now();
     const payloadExpenses = [
-      ...currentExpenses.map((e) => ({
+      ...effectiveExpenses.map((e) => ({
         id: e.id,
         name: e.name,
         amount: Math.round(e.amount),
@@ -193,7 +204,7 @@ export async function executeSync(
 
     // Fusión de gastos (Merge LWW con el servidor)
     const serverExpenses = data.serverExpenses || [];
-    let mergedExpenses = [...currentExpenses];
+    let mergedExpenses = [...effectiveExpenses];
 
     for (const sExp of serverExpenses) {
       if (sExp.deleted) {
