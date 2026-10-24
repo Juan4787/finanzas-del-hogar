@@ -13,6 +13,7 @@ import {
   getThisMonthRange,
   getLastMonthRange,
   dateInputToRange,
+  getTodayDateInput,
 } from '../utils/dateUtils';
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -20,6 +21,7 @@ interface PeriodComparatorProps {
   expenses: Expense[];
   settings: InflationSettings;
   indices: Record<string, number>;
+  initialPreset?: 'month' | 'week' | 'day';
 }
 
 type PresetOption = 'month' | 'week' | 'day' | 'custom';
@@ -28,11 +30,12 @@ export const PeriodComparator: React.FC<PeriodComparatorProps> = ({
   expenses,
   settings,
   indices,
+  initialPreset = 'month',
 }) => {
-  const [selectedPreset, setSelectedPreset] = useState<PresetOption>('month');
+  const [selectedPreset, setSelectedPreset] = useState<PresetOption>(initialPreset);
   const [showCustomRange, setShowCustomRange] = useState(false);
 
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const [todayISO] = useState(() => getTodayDateInput());
   const [customStartA, setCustomStartA] = useState(todayISO);
   const [customEndA, setCustomEndA] = useState(todayISO);
   const [customStartB, setCustomStartB] = useState(todayISO);
@@ -120,7 +123,15 @@ export const PeriodComparator: React.FC<PeriodComparatorProps> = ({
           )}
         </div>
         <div className="hero-subtext">
-          {diff > 0 ? `Un aumento del ${diffPct}% respecto al período anterior` : diff < 0 ? `Una reducción del ${diffPct}% respecto al período anterior` : 'Sin variaciones'}
+          {totalB === 0 && totalA > 0
+            ? summaryB.periodLabel === 'Ayer'
+              ? 'No hubo gastos registrados ayer'
+              : 'No hubo gastos registrados en el período anterior'
+            : diff > 0
+            ? `Un aumento del ${diffPct}% respecto al período anterior`
+            : diff < 0
+            ? `Una reducción del ${diffPct}% respecto al período anterior`
+            : 'Sin variaciones entre ambos períodos'}
         </div>
       </div>
 

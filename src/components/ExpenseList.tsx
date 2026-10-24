@@ -5,6 +5,7 @@ import {
   getExpenseConstantAmount,
   getCategoryColor,
   normalizeCategoryName,
+  normalizeSearchText,
 } from '../utils/financeCalculations';
 import { formatDateTime } from '../utils/dateUtils';
 import { Search, Trash2, Pencil } from 'lucide-react';
@@ -28,16 +29,22 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
 
+  const normalizedQuery = normalizeSearchText(searchTerm);
+
   const filtered = expenses.filter(e => {
+    if (!normalizedQuery) return true;
     const normCat = normalizeCategoryName(e.category);
     return (
-      searchTerm.trim() === '' ||
-      e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      normCat.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizeSearchText(e.name).includes(normalizedQuery) ||
+      normalizeSearchText(normCat).includes(normalizedQuery)
     );
   });
 
-  filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  filtered.sort((a, b) => {
+    const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
 
   const handleConfirmDelete = () => {
     if (expenseToDelete) {
@@ -46,11 +53,15 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
     }
   };
 
+  const badgeLabel = normalizedQuery
+    ? `${filtered.length} de ${expenses.length}`
+    : `${expenses.length} ${expenses.length === 1 ? 'anotado' : 'anotados'}`;
+
   return (
     <div className="simple-card">
       <div className="simple-list-header">
         <h3 className="simple-section-title">Últimos Gastos</h3>
-        <span className="simple-badge-count">{expenses.length} anotados</span>
+        <span className="simple-badge-count">{badgeLabel}</span>
       </div>
 
       {/* Buscador Rápido y Sencillo */}
@@ -72,9 +83,9 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
 
       {filtered.length === 0 ? (
         <div className="simple-empty-state">
-          <p>
+          <p className="simple-empty-text">
             {expenses.length === 0
-              ? 'No hay gastos anotados todavía. ¡Toca "+ Anotar Gasto" para comenzar!'
+              ? 'No hay gastos anotados todavía. ¡Toca "Anotar Gasto" para comenzar!'
               : 'No se encontraron gastos con esa búsqueda.'}
           </p>
         </div>

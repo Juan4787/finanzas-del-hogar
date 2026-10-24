@@ -91,7 +91,6 @@ assert(cat3 === 'Nafta', `'NAFTA' se normaliza a 'Nafta'`);
 assert(cat4 === 'Nafta', `'  nafta  ' con espacios se normaliza a 'Nafta'`);
 assert(cat1 === cat2 && cat2 === cat3 && cat3 === cat4, 'Todas las variantes de "nafta" convergen a la misma categoría canónica');
 
-const abl1 = normalizeCategoryName('abl');
 const abl2 = normalizeCategoryName('ABL');
 assert(abl2 === 'ABL', `'ABL' preserva mayúsculas como sigla`);
 assert(normalizeCategoryName('') === 'Otros', `Categoría vacía retorna 'Otros'`);

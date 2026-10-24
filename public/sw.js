@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finanzas-hogar-v1';
+const CACHE_NAME = 'finanzas-hogar-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -30,10 +30,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Intercepción de solicitudes de red (Network First con fallback a Cache para HTML/datos, y Stale-While-Revalidate para estáticos)
+// Intercepción de solicitudes de red (Network First con fallback a Cache para HTML, y Stale-While-Revalidate para estáticos GET)
 self.addEventListener('fetch', (event) => {
   // Ignorar peticiones no HTTP/HTTPS o esquemas especiales (chrome-extension, etc.)
   if (!event.request.url.startsWith('http')) return;
+
+  // Nunca interceptar métodos distintos de GET (POST /api/sync, etc.) ni endpoints de API
+  if (event.request.method !== 'GET') return;
+  try {
+    const reqUrl = new URL(event.request.url);
+    if (reqUrl.pathname.startsWith('/api/')) return;
+  } catch {}
 
   if (event.request.mode === 'navigate') {
     event.respondWith(

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { Expense } from '../types/finance';
-import { getNowLocalISO } from '../utils/dateUtils';
+import { getNowLocalISO, toLocalDateTimeInput, formatModalDatePreview } from '../utils/dateUtils';
 import {
   normalizeCategoryName,
   getSuggestedCategory,
@@ -19,6 +19,19 @@ interface AddExpenseModalProps {
 
 const DRAFT_KEY = 'finanzas_draft_expense_v1';
 
+function readDraft(): { name: string; amountStr: string; categoryInput: string } {
+  try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
+    return {
+      name: draft.name || '',
+      amountStr: draft.amountStr || '',
+      categoryInput: draft.categoryInput || '',
+    };
+  } catch {
+    return { name: '', amountStr: '', categoryInput: '' };
+  }
+}
+
 export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   isOpen,
   onClose,
@@ -28,48 +41,36 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 }) => {
   const isEditing = Boolean(expenseToEdit);
 
-  const [name, setName] = useState('');
-  const [amountStr, setAmountStr] = useState('');
-  const [categoryInput, setCategoryInput] = useState('');
-  const [timestamp, setTimestamp] = useState(getNowLocalISO());
+  const [name, setName] = useState(() =>
+    expenseToEdit ? expenseToEdit.name : readDraft().name
+  );
+  const [amountStr, setAmountStr] = useState(() =>
+    expenseToEdit ? String(Math.round(expenseToEdit.amount)) : readDraft().amountStr
+  );
+  const [categoryInput, setCategoryInput] = useState(() =>
+    expenseToEdit ? expenseToEdit.category || '' : readDraft().categoryInput
+  );
+  const [timestamp, setTimestamp] = useState(() =>
+    expenseToEdit ? toLocalDateTimeInput(expenseToEdit.timestamp) : getNowLocalISO()
+  );
   const [showCustomDate, setShowCustomDate] = useState(false);
-  const [suggestedCat, setSuggestedCat] = useState('Supermercado');
+
+  const suggestedCat = useMemo(
+    () => getSuggestedCategory(name, allExpenses),
+    [name, allExpenses]
+  );
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Inicialización al abrir el modal (diferencia entre crear y editar)
   useEffect(() => {
     if (isOpen) {
-      if (expenseToEdit) {
-        setName(expenseToEdit.name);
-        setAmountStr(String(Math.round(expenseToEdit.amount)));
-        setCategoryInput(expenseToEdit.category || '');
-        setTimestamp(expenseToEdit.timestamp || getNowLocalISO());
-        setShowCustomDate(false);
-      } else {
-        // Cargar borrador previo si existe al crear uno nuevo
-        try {
-          const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
-          setName(draft.name || '');
-          setAmountStr(draft.amountStr || '');
-          setCategoryInput(draft.categoryInput || '');
-        } catch {
-          setName('');
-          setAmountStr('');
-          setCategoryInput('');
-        }
-        setTimestamp(getNowLocalISO());
-        setShowCustomDate(false);
-      }
-
-      setSuggestedCat(getSuggestedCategory(expenseToEdit?.name || name, allExpenses));
-
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         amountInputRef.current?.focus();
       }, 150);
+      return () => clearTimeout(timer);
     }
-  }, [isOpen, expenseToEdit]);
+  }, [isOpen]);
 
   // Guardar borrador en tiempo real SOLO si estamos creando uno nuevo
   useEffect(() => {
@@ -77,13 +78,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       localStorage.setItem(DRAFT_KEY, JSON.stringify({ name, amountStr, categoryInput }));
     }
   }, [name, amountStr, categoryInput, isOpen, isEditing]);
-
-  useEffect(() => {
-    if (!isEditing) {
-      const sug = getSuggestedCategory(name, allExpenses);
-      setSuggestedCat(sug);
-    }
-  }, [name, allExpenses, isEditing]);
 
   if (!isOpen) return null;
 
@@ -309,9 +303,14 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
           {/* Fecha / Hora discreta */}
           <div className="simple-date-row">
-            <span className="simple-date-text">
-              📅 Fecha: <strong>{new Date(timestamp).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</strong> a las <strong>{new Date(timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</strong>
-            </span>
+            {(() => {
+              const { datePart, timePart } = formatModalDatePreview(timestamp);
+              return (
+                <span className="simple-date-text">
+                  📅 Fecha: <strong>{datePart}</strong> a las <strong>{timePart} hs</strong>
+                </span>
+              );
+            })()}
             <button
               type="button"
               className="simple-link-btn"

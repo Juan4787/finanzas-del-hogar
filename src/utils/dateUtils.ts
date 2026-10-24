@@ -7,13 +7,46 @@
  * listo para alimentar un <input type="datetime-local">.
  */
 export function getNowLocalISO(): string {
+  return toLocalDateTimeInput(new Date());
+}
+
+/**
+ * Convierte cualquier Date o string ISO a formato local 'YYYY-MM-DDTHH:mm'
+ * compatible con <input type="datetime-local">.
+ */
+export function toLocalDateTimeInput(dateInput?: string | Date): string {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const year = validDate.getFullYear();
+  const month = String(validDate.getMonth() + 1).padStart(2, '0');
+  const day = String(validDate.getDate()).padStart(2, '0');
+  const hours = String(validDate.getHours()).padStart(2, '0');
+  const minutes = String(validDate.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * Obtiene la fecha local actual en formato 'YYYY-MM-DD'
+ * para alimentar <input type="date"> sin desfase UTC.
+ */
+export function getTodayDateInput(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Formatea de manera segura la vista previa de fecha y hora en el modal
+ */
+export function formatModalDatePreview(isoString: string): { datePart: string; timePart: string } {
+  const parsed = isoString ? new Date(isoString) : new Date();
+  const validDate = isNaN(parsed.getTime()) ? new Date() : parsed;
+  return {
+    datePart: validDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
+    timePart: validDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+  };
 }
 
 /**
@@ -121,14 +154,21 @@ export function getLastMonthRange(): { start: string; end: string } {
 }
 
 /**
- * Convierte un rango 'YYYY-MM-DD' a ISO start y end
+ * Convierte un rango 'YYYY-MM-DD' a ISO start y end.
+ * Si el usuario invierte el orden (inicio > fin), los intercambia automáticamente.
  */
 export function dateInputToRange(startDateInput: string, endDateInput: string): { start: string; end: string } {
-  const [sy, sm, sd] = startDateInput.split('-').map(Number);
-  const [ey, em, ed] = endDateInput.split('-').map(Number);
+  const [sy, sm, sd] = (startDateInput || getTodayDateInput()).split('-').map(Number);
+  const [ey, em, ed] = (endDateInput || getTodayDateInput()).split('-').map(Number);
 
-  const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-  const end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+  const d1 = new Date(sy, (sm || 1) - 1, sd || 1);
+  const d2 = new Date(ey, (em || 1) - 1, ed || 1);
+
+  const earlier = d1.getTime() <= d2.getTime() ? d1 : d2;
+  const later = d1.getTime() <= d2.getTime() ? d2 : d1;
+
+  const start = new Date(earlier.getFullYear(), earlier.getMonth(), earlier.getDate(), 0, 0, 0, 0);
+  const end = new Date(later.getFullYear(), later.getMonth(), later.getDate(), 23, 59, 59, 999);
 
   return { start: start.toISOString(), end: end.toISOString() };
 }

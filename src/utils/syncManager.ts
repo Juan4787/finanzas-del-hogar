@@ -126,18 +126,7 @@ export async function executeSync(
     const syncUrl = `${baseUrl}/api/sync`;
 
     const deletedItems = getDeletedExpensesQueue();
-
-    // Leemos el estado local más fresco para que ningún gasto nuevo se pierda por desfase de closure
-    let effectiveExpenses = currentExpenses;
-    try {
-      const rawStored = localStorage.getItem('finanzas_hogar_expenses_v1');
-      if (rawStored) {
-        const parsed = JSON.parse(rawStored);
-        if (Array.isArray(parsed) && parsed.length > effectiveExpenses.length) {
-          effectiveExpenses = parsed;
-        }
-      }
-    } catch {}
+    const effectiveExpenses = Array.isArray(currentExpenses) ? currentExpenses : [];
 
     const now = Date.now();
     const payloadExpenses = [
@@ -164,7 +153,7 @@ export async function executeSync(
 
     const payload = {
       householdId: config.householdId.trim(),
-      since: config.lastSyncedAt || 0,
+      since: 0,
       expenses: payloadExpenses,
       inflationSettings: {
         rates: currentSettings.rates,
@@ -242,8 +231,12 @@ export async function executeSync(
       }
     }
 
-    // Reordenar por timestamp descendente
-    mergedExpenses.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // Reordenar por timestamp descendente (con desempate por updatedAt)
+    mergedExpenses.sort((a, b) => {
+      const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
 
     // Fusión de inflación si vino actualizada
     let mergedSettings = currentSettings;

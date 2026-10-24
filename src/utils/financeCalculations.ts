@@ -43,19 +43,37 @@ export const CATEGORY_COLORS = [
   '#64748b', // Pizarra para 'Otros'
 ];
 
+const FIXED_CATEGORY_COLORS: Record<string, string> = {
+  supermercado: '#3b82f6',       // Azul vibrante
+  gimnasio: '#10b981',           // Verde esmeralda
+  deportes: '#ef4444',           // Rojo coral
+  electricidad: '#f59e0b',       // Ámbar
+  gas: '#f97316',                // Naranja
+  'comida de mascotas': '#a855f7', // Púrpura
+  expensas: '#f97316',           // Naranja vibrante
+  alimentos: '#22c55e',          // Verde
+  dietetica: '#eab308',          // Amarillo
+  salud: '#ec4899',              // Rosa
+  abl: '#06b6d4',                // Cian
+  nafta: '#6366f1',              // Índigo
+  otros: '#64748b',              // Pizarra
+  otro: '#64748b',
+};
+
 /**
  * Obtiene el color correspondiente a una categoría de forma determinística
+ * y consistente en toda la aplicación (Lista, Gráfico de Torta y Comparador).
  */
-export function getCategoryColor(categoryName: string, index = 0): string {
-  const normalized = normalizeCategoryName(categoryName).toLowerCase();
-  if (normalized === 'otros' || normalized === 'otro') {
-    return '#64748b';
+export function getCategoryColor(categoryName: string, _index = 0): string {
+  const normalized = normalizeSearchText(normalizeCategoryName(categoryName));
+  if (FIXED_CATEGORY_COLORS[normalized]) {
+    return FIXED_CATEGORY_COLORS[normalized];
   }
   let hash = 0;
   for (let i = 0; i < normalized.length; i++) {
     hash = normalized.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const colorIndex = Math.abs(hash + index) % (CATEGORY_COLORS.length - 1);
+  const colorIndex = Math.abs(hash) % (CATEGORY_COLORS.length - 1);
   return CATEGORY_COLORS[colorIndex];
 }
 
@@ -275,9 +293,18 @@ export function comparePeriods(
 }
 
 /**
- * Sugerencia inteligente de categoría basada en historial de gastos:
- * 1. Si el nombre coincide con un gasto previo, sugiere la categoría previa normalizada.
- * 2. Si no coincide, sugiere la/**
+ * Quita tildes/diacríticos y pasa a minúsculas para búsquedas y comparaciones tolerantes
+ */
+export function normalizeSearchText(text?: string): string {
+  if (!text) return '';
+  return text
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/**
  * Sugerencia inteligente de categoría:
  * 1. Si el nombre coincide con un gasto previo, sugiere la categoría previa normalizada.
  * 2. Si no coincide o no hay historial, sugiere 'Supermercado'.
@@ -287,12 +314,13 @@ export function getSuggestedCategory(currentName: string, expenses: Expense[]): 
     return 'Supermercado';
   }
 
-  const cleanName = currentName.trim().toLowerCase();
+  const cleanName = normalizeSearchText(currentName);
 
   if (cleanName.length >= 2) {
-    const matchingExpenses = expenses.filter(e => 
-      e.name.toLowerCase().includes(cleanName) || cleanName.includes(e.name.toLowerCase())
-    );
+    const matchingExpenses = expenses.filter(e => {
+      const expName = normalizeSearchText(e.name);
+      return expName.includes(cleanName) || cleanName.includes(expName);
+    });
 
     if (matchingExpenses.length > 0) {
       const matchCounts: Record<string, number> = {};

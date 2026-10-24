@@ -10,6 +10,7 @@ import {
   computeCumulativePriceIndices,
   calculatePeriodSummary,
   normalizeCategoryName,
+  getMonthKey,
 } from './utils/financeCalculations';
 import { getThisMonthRange } from './utils/dateUtils';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -44,10 +45,7 @@ export const App: React.FC = () => {
   const [inflationSettings, setInflationSettings] = useState<InflationSettings>(() => loadInflationSettings());
 
   const expensesRef = useRef<Expense[]>(expenses);
-  expensesRef.current = expenses;
-
   const inflationSettingsRef = useRef<InflationSettings>(inflationSettings);
-  inflationSettingsRef.current = inflationSettings;
   
   const [activeTab, setActiveTab] = useState<'home' | 'compare' | 'settings'>(() => {
     try {
@@ -60,6 +58,7 @@ export const App: React.FC = () => {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
+  const [comparePreset, setComparePreset] = useState<'month' | 'week' | 'day'>('month');
 
   // Sincronización en la nube (Cloudflare D1)
   const [syncConfig, setSyncConfig] = useState<SyncConfig>(() => getSyncConfig());
@@ -87,14 +86,9 @@ export const App: React.FC = () => {
 
     if (result.success) {
       if (result.updatedExpenses) {
-        // SEGURIDAD CRÍTICA: Nunca permitir que una respuesta vacía del servidor borre gastos locales
-        const safeExpenses = (result.updatedExpenses.length > 0 || expsToSync.length === 0)
-          ? result.updatedExpenses
-          : expsToSync;
-
-        expensesRef.current = safeExpenses;
-        setExpenses(safeExpenses);
-        saveExpenses(safeExpenses);
+        expensesRef.current = result.updatedExpenses;
+        setExpenses(result.updatedExpenses);
+        saveExpenses(result.updatedExpenses);
       }
       if (result.updatedSettings) {
         inflationSettingsRef.current = result.updatedSettings;
@@ -117,30 +111,12 @@ export const App: React.FC = () => {
 
   // Sincronización inicial al montar o al recuperar señal de internet
   useEffect(() => {
-    // Purgar de inmediato cualquier gasto de demo residual del estado en memoria
-    const demoItems = expenses.filter(e => typeof e.id === 'string' && e.id.startsWith('demo-'));
-    if (demoItems.length > 0) {
-      demoItems.forEach(e => recordDeletedExpense(e.id));
-      const cleanList = expenses.filter(e => !(typeof e.id === 'string' && e.id.startsWith('demo-')));
-      setExpenses(cleanList);
-      saveExpenses(cleanList);
-
-      if (cleanList.length === 0) {
-        const cleanInf: InflationSettings = {
-          rates: {},
-          baseMonthKey: new Date().toISOString().slice(0, 7),
-          enabled: false,
-          updatedAt: Date.now(),
-        };
-        setInflationSettings(cleanInf);
-        saveInflationSettings(cleanInf);
-      }
-      triggerDebouncedSync();
-    }
-
+    let initTimer: ReturnType<typeof setTimeout> | null = null;
     const currentCfg = getSyncConfig();
     if (currentCfg.householdId.trim().length >= 3) {
-      runSync(currentCfg);
+      initTimer = setTimeout(() => {
+        runSync(currentCfg);
+      }, 0);
     }
 
     const handleOnline = () => {
@@ -151,8 +127,11 @@ export const App: React.FC = () => {
     };
 
     window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, []); // Se ejecuta únicamente una vez al montar, NUNCA en cada pulsación de tecla
+    return () => {
+      if (initTimer) clearTimeout(initTimer);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [runSync]);
 
   useEffect(() => {
     try {
@@ -173,10 +152,12 @@ export const App: React.FC = () => {
   }, [activeTab]);
 
   useEffect(() => {
+    expensesRef.current = expenses;
     saveExpenses(expenses);
   }, [expenses]);
 
   useEffect(() => {
+    inflationSettingsRef.current = inflationSettings;
     saveInflationSettings(inflationSettings);
   }, [inflationSettings]);
 
@@ -248,7 +229,7 @@ export const App: React.FC = () => {
 
     const cleanInf: InflationSettings = {
       rates: {},
-      baseMonthKey: new Date().toISOString().slice(0, 7),
+      baseMonthKey: getMonthKey(new Date()),
       enabled: false,
       updatedAt: Date.now(),
     };
@@ -371,14 +352,17 @@ export const App: React.FC = () => {
                   }}
                 >
                   <Plus size={26} strokeWidth={2.6} />
-                  <span>+ Anotar Gasto</span>
+                  <span>Anotar Gasto</span>
                 </button>
 
                 <SummaryCards
                   expenses={expenses}
                   settings={inflationSettings}
                   indices={indices}
-                  onSelectPeriodComparison={() => navigateToTab('compare')}
+                  onSelectPeriodComparison={(period) => {
+                    setComparePreset(period);
+                    navigateToTab('compare');
+                  }}
                 />
 
                 <ExpenseList
@@ -404,9 +388,11 @@ export const App: React.FC = () => {
           <div className="tab-pane animate-fade-in">
             <div className="subview-centered-container">
               <PeriodComparator
+                key={comparePreset}
                 expenses={expenses}
                 settings={inflationSettings}
                 indices={indices}
+                initialPreset={comparePreset}
               />
             </div>
           </div>
@@ -416,11 +402,15 @@ export const App: React.FC = () => {
           <div className="tab-pane animate-fade-in">
             <div className="subview-centered-container">
               <SettingsView
+                key={`${syncConfig.householdId}-${syncConfig.apiUrl}`}
                 expenses={expenses}
                 settings={inflationSettings}
                 indices={indices}
                 onUpdateSettings={(newSettings) => {
-                  setInflationSettings(newSettings);
+                  const stamped = { ...newSettings, updatedAt: Date.now() };
+                  inflationSettingsRef.current = stamped;
+                  setInflationSettings(stamped);
+                  saveInflationSettings(stamped);
                   triggerDebouncedSync();
                 }}
                 onRestoreData={handleRestoreData}
@@ -469,16 +459,19 @@ export const App: React.FC = () => {
       </nav>
 
       {/* MODAL PARA AGREGAR O EDITAR GASTO */}
-      <AddExpenseModal
-        isOpen={isAddModalOpen}
-        expenseToEdit={expenseToEdit}
-        onClose={() => {
-          setIsAddModalOpen(false);
-          setExpenseToEdit(null);
-        }}
-        onSaveExpense={handleSaveExpense}
-        allExpenses={expenses}
-      />
+      {isAddModalOpen && (
+        <AddExpenseModal
+          key={expenseToEdit ? `edit-${expenseToEdit.id}` : 'create-new'}
+          isOpen={isAddModalOpen}
+          expenseToEdit={expenseToEdit}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setExpenseToEdit(null);
+          }}
+          onSaveExpense={handleSaveExpense}
+          allExpenses={expenses}
+        />
+      )}
     </div>
   );
 };

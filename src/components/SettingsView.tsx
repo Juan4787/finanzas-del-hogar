@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { Expense, InflationSettings, SyncConfig, SyncState } from '../types/finance';
 import {
   formatMonthName,
@@ -57,19 +57,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [localHouseholdId, setLocalHouseholdId] = useState(syncConfig.householdId || '');
   const [localApiUrl, setLocalApiUrl] = useState(syncConfig.apiUrl || '');
 
-  useEffect(() => {
-    setLocalHouseholdId(syncConfig.householdId || '');
-  }, [syncConfig.householdId]);
-
-  useEffect(() => {
-    setLocalApiUrl(syncConfig.apiUrl || '');
-  }, [syncConfig.apiUrl]);
-
   const handleSaveAndSync = () => {
+    const nextHousehold = localHouseholdId.trim();
+    const nextApiUrl = localApiUrl.trim();
+    const hasEndpointChanged =
+      nextHousehold !== syncConfig.householdId || nextApiUrl !== syncConfig.apiUrl;
+
     const updated: SyncConfig = {
       ...syncConfig,
-      householdId: localHouseholdId.trim(),
-      apiUrl: localApiUrl.trim(),
+      householdId: nextHousehold,
+      apiUrl: nextApiUrl,
+      lastSyncedAt: hasEndpointChanged ? null : syncConfig.lastSyncedAt,
     };
     onUpdateSyncConfig(updated);
     onTriggerSync(updated);
@@ -84,7 +82,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   } | null>(null);
 
   const expenseMonths = expenses.map(e => getMonthKey(e.timestamp));
-  const allMonths = Array.from(new Set([...Object.keys(settings.rates), ...expenseMonths])).filter(Boolean);
+  const allMonths = Array.from(
+    new Set([
+      settings.baseMonthKey,
+      ...Object.keys(settings.rates),
+      ...expenseMonths,
+    ])
+  ).filter(Boolean);
   allMonths.sort().reverse();
 
   const handleRateChange = (monthKey: string, rateVal: string) => {
@@ -124,6 +128,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       } catch {}
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
