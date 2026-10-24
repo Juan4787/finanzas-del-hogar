@@ -9,6 +9,7 @@ const SYNC_CONFIG_KEY = 'finanzas_sync_config_v1';
 const DELETED_EXPENSES_QUEUE_KEY = 'finanzas_deleted_queue_v1';
 
 export const DEFAULT_API_URL = 'https://finanzas-hogar-api.finanzas-del-hogar.workers.dev';
+export const DEFAULT_HOUSEHOLD_ID = 'hogar-principal';
 
 /**
  * Genera un código de hogar amigable (ej: hogar-marta-842)
@@ -31,7 +32,8 @@ export function getSyncConfig(): SyncConfig {
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
-        householdId: parsed.householdId || '',
+        householdId:
+          parsed.householdId !== undefined ? parsed.householdId : DEFAULT_HOUSEHOLD_ID,
         apiUrl: parsed.apiUrl?.trim() ? parsed.apiUrl.trim() : DEFAULT_API_URL,
         lastSyncedAt: parsed.lastSyncedAt || null,
         autoSync: parsed.autoSync !== undefined ? parsed.autoSync : true,
@@ -40,7 +42,7 @@ export function getSyncConfig(): SyncConfig {
   } catch {}
 
   return {
-    householdId: '',
+    householdId: DEFAULT_HOUSEHOLD_ID,
     apiUrl: DEFAULT_API_URL,
     lastSyncedAt: null,
     autoSync: true,

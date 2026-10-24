@@ -29,6 +29,7 @@ import { PeriodComparator } from './components/PeriodComparator';
 import { ExpenseList } from './components/ExpenseList';
 import { SettingsView } from './components/SettingsView';
 import { AddExpenseModal } from './components/AddExpenseModal';
+import { ConfirmModal } from './components/ConfirmModal';
 
 import {
   Plus,
@@ -67,7 +68,12 @@ export const App: React.FC = () => {
   const [syncMessage, setSyncMessage] = useState<string>('');
   const syncDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { isInstallable, promptInstall } = useOnlineStatus();
+  const {
+    isStandalone,
+    showInstallGuide,
+    setShowInstallGuide,
+    promptInstall,
+  } = useOnlineStatus();
 
   // Función de sincronización bidireccional silenciosa
   const runSync = useCallback(async (customConfig?: SyncConfig, customExpenses?: Expense[]) => {
@@ -352,8 +358,14 @@ export const App: React.FC = () => {
           </nav>
 
           <div className="header-right">
-            {isInstallable && (
-              <button className="btn-install-header" onClick={promptInstall} title="Instalar en la pantalla de inicio">
+            {!isStandalone && (
+              <button
+                type="button"
+                className="btn-install-header"
+                onClick={promptInstall}
+                aria-label="Instalar aplicación"
+                title="Instalar en la pantalla de inicio"
+              >
                 <Download size={17} />
                 <span className="desktop-only-text">Instalar</span>
               </button>
@@ -505,6 +517,18 @@ export const App: React.FC = () => {
           allExpenses={expenses}
         />
       )}
+
+      {/* GUÍA RÁPIDA DE INSTALACIÓN PWA SI EL NAVEGADOR NO DISPARA PROMPT AUTOMÁTICO */}
+      <ConfirmModal
+        isOpen={showInstallGuide}
+        title="Instalar en tu teléfono"
+        message="En Android (Chrome): toca el menú ⋮ arriba a la derecha y elige «Instalar aplicación» o «Agregar a la pantalla principal». En iPhone (Safari): toca Compartir y elige «Agregar a inicio»."
+        confirmLabel="Entendido"
+        cancelLabel="Cerrar"
+        isDestructive={false}
+        onConfirm={() => setShowInstallGuide(false)}
+        onCancel={() => setShowInstallGuide(false)}
+      />
     </div>
   );
 };

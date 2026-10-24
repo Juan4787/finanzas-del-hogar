@@ -177,7 +177,8 @@ export default {
                    notes = excluded.notes,
                    deleted_at = excluded.deleted_at,
                    updated_at = excluded.updated_at
-                 WHERE excluded.updated_at >= expenses.updated_at`
+                 WHERE excluded.updated_at >= expenses.updated_at
+                   AND expenses.household_id = excluded.household_id`
               ).bind(
                 exp.id,
                 householdId,

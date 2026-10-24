@@ -1,9 +1,12 @@
-const CACHE_NAME = 'finanzas-hogar-v3';
+const CACHE_NAME = 'finanzas-hogar-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
 ];
 
 // Instalación: precargar activos esenciales del shell
